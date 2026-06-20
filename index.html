@@ -715,8 +715,6 @@ function draw() {
       if (i === selectedCircle) return;
       if (dist(sc.x, sc.y, c.x, c.y) <= MAX_DIST &&
           !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
-          connectionCount(selectedCircle) < 3 &&
-          connectionCount(i) < 3 &&
           !lineIntersectsAny(selectedCircle, i)) {
         drawLine(sc, c, 'rgba(255,255,255,0.07)', 1.5);
       }
@@ -729,8 +727,6 @@ function draw() {
     const isAdj = selectedCircle !== null && i !== selectedCircle &&
                   dist(circles[selectedCircle].x, circles[selectedCircle].y, c.x, c.y) <= MAX_DIST &&
                   !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
-                  connectionCount(selectedCircle) < 3 &&
-                  connectionCount(i) < 3 &&
                   !lineIntersectsAny(selectedCircle, i);
 
     ctx.beginPath();
