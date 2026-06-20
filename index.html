@@ -202,46 +202,21 @@
   .modal h2 { font-family: 'Fredoka One', cursive; font-size: 2rem; }
   .modal p { color: var(--muted); }
 
-  /* ── Banner instalación PWA ── */
   #installBanner {
-    display: none;
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #252b3b;
-    border: 2px solid #5b9cf6;
-    border-radius: 16px;
-    padding: 14px 20px;
-    z-index: 200;
-    align-items: center;
-    gap: 14px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.5);
-    max-width: 320px;
-    width: 90%;
+    display: none; position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%); background: #252b3b;
+    border: 2px solid #5b9cf6; border-radius: 16px;
+    padding: 14px 20px; z-index: 200; align-items: center;
+    gap: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    max-width: 320px; width: 90%;
   }
   #installBanner.show { display: flex; }
   #installBanner .ib-icon { font-size: 1.8rem; flex-shrink:0; }
   #installBanner .ib-text { flex:1; }
   #installBanner .ib-text strong { display:block; font-family:'Fredoka One',cursive; font-size:1rem; color:#e8eaf0; }
   #installBanner .ib-text span { font-size:.75rem; color:#7a82a0; }
-  #installBanner .ib-btn {
-    background: #5b9cf6;
-    color: #1a1f2e;
-    border: none;
-    border-radius: 10px;
-    padding: 8px 14px;
-    font-family: 'Nunito', sans-serif;
-    font-weight: 700;
-    font-size: .85rem;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  #installBanner .ib-close {
-    background: none; border: none; color: #7a82a0;
-    font-size: 1.1rem; cursor: pointer; padding: 0; flex-shrink:0;
-  }
+  #installBanner .ib-btn { background: #5b9cf6; color: #1a1f2e; border: none; border-radius: 10px; padding: 8px 14px; font-family:'Nunito',sans-serif; font-weight:700; font-size:.85rem; cursor:pointer; white-space:nowrap; flex-shrink:0; }
+  #installBanner .ib-close { background:none; border:none; color:#7a82a0; font-size:1.1rem; cursor:pointer; padding:0; flex-shrink:0; }
 </style>
 
   <link rel="manifest" href="manifest.json">
@@ -495,6 +470,13 @@ function handleCanvasClick(e) {
     return;
   }
 
+  // No cruzar aristas existentes ni atravesar triángulos ya cerrados
+  if (lineIntersectsAny(a, b)) {
+    selectedCircle = hit;
+    draw();
+    return;
+  }
+
   // Trazar
   edges.add(key);
   linesLeft--;
@@ -543,6 +525,75 @@ function areAdjacent(i, j) {
   return dist(circles[i].x, circles[i].y, circles[j].x, circles[j].y) <= MAX_DIST;
 }
 
+// ── Geometría: intersección de segmentos ─────────────────────────────────────
+// Producto vectorial 2D
+function cross2d(ax, ay, bx, by) {
+  return ax * by - ay * bx;
+}
+
+// ¿El punto (px,py) está en el segmento (ax,ay)-(bx,by)? (asumiendo colineal)
+function onSegment(ax, ay, bx, by, px, py) {
+  return Math.min(ax,bx) - 1e-9 <= px && px <= Math.max(ax,bx) + 1e-9 &&
+         Math.min(ay,by) - 1e-9 <= py && py <= Math.max(ay,by) + 1e-9;
+}
+
+// ¿Se cruzan los segmentos p1-p2 y p3-p4? (ignorando extremos compartidos)
+function segmentsIntersect(x1,y1,x2,y2, x3,y3,x4,y4) {
+  const dx1 = x2-x1, dy1 = y2-y1;
+  const dx2 = x4-x3, dy2 = y4-y3;
+  const denom = cross2d(dx1, dy1, dx2, dy2);
+  const eps = 1e-9;
+
+  if (Math.abs(denom) < eps) {
+    // Paralelas / colineales: no las consideramos cruce válido
+    return false;
+  }
+
+  const t = cross2d(x3-x1, y3-y1, dx2, dy2) / denom;
+  const u = cross2d(x3-x1, y3-y1, dx1, dy1) / denom;
+
+  // Cruce real solo si t y u están estrictamente en (0,1) — excluimos extremos compartidos
+  const margin = 1e-6;
+  return t > margin && t < 1-margin && u > margin && u < 1-margin;
+}
+
+// ¿El segmento a-b cruza alguna arista existente o atraviesa algún triángulo cerrado?
+function lineIntersectsAny(idxA, idxB) {
+  const ax = circles[idxA].x, ay = circles[idxA].y;
+  const bx = circles[idxB].x, by = circles[idxB].y;
+
+  // 1. Comprobar cruce con aristas existentes
+  for (const key of edges) {
+    const [i, j] = key.split('-').map(Number);
+    // Ignorar aristas que comparten un extremo con el nuevo segmento
+    if (i === idxA || i === idxB || j === idxA || j === idxB) continue;
+    const cx = circles[i].x, cy = circles[i].y;
+    const dx = circles[j].x, dy = circles[j].y;
+    if (segmentsIntersect(ax,ay,bx,by, cx,cy,dx,dy)) return true;
+  }
+
+  // 2. Comprobar que el punto medio no cae dentro de un triángulo ya cerrado
+  const mx = (ax+bx)/2, my = (ay+by)/2;
+  for (const t of triangles) {
+    if (pointInTriangle(mx, my,
+        circles[t.a].x, circles[t.a].y,
+        circles[t.b].x, circles[t.b].y,
+        circles[t.c].x, circles[t.c].y)) return true;
+  }
+
+  return false;
+}
+
+// ¿El punto (px,py) está dentro del triángulo (ax,ay)-(bx,by)-(cx,cy)?
+function pointInTriangle(px, py, ax, ay, bx, by, cx, cy) {
+  const d1 = cross2d(px-ax, py-ay, bx-ax, by-ay);
+  const d2 = cross2d(px-bx, py-by, cx-bx, cy-by);
+  const d3 = cross2d(px-cx, py-cy, ax-cx, ay-cy);
+  const hasNeg = (d1 < -1e-9) || (d2 < -1e-9) || (d3 < -1e-9);
+  const hasPos = (d1 >  1e-9) || (d2 >  1e-9) || (d3 >  1e-9);
+  return !(hasNeg && hasPos);
+}
+
 function findNewTriangles(a, b) {
   const found = [];
   for (let c = 0; c < circles.length; c++) {
@@ -566,7 +617,8 @@ function noMoreMoves() {
     for (let j = i+1; j < circles.length; j++) {
       if (connectionCount(j) >= 3) continue;
       if (!edges.has(`${i}-${j}`) &&
-          dist(circles[i].x,circles[i].y,circles[j].x,circles[j].y) <= MAX_DIST) {
+          dist(circles[i].x,circles[i].y,circles[j].x,circles[j].y) <= MAX_DIST &&
+          !lineIntersectsAny(i, j)) {
         return false;
       }
     }
@@ -648,7 +700,8 @@ function draw() {
       if (dist(sc.x, sc.y, c.x, c.y) <= MAX_DIST &&
           !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
           connectionCount(selectedCircle) < 3 &&
-          connectionCount(i) < 3) {
+          connectionCount(i) < 3 &&
+          !lineIntersectsAny(selectedCircle, i)) {
         drawLine(sc, c, 'rgba(255,255,255,0.07)', 1.5);
       }
     });
@@ -661,7 +714,8 @@ function draw() {
                   dist(circles[selectedCircle].x, circles[selectedCircle].y, c.x, c.y) <= MAX_DIST &&
                   !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
                   connectionCount(selectedCircle) < 3 &&
-                  connectionCount(i) < 3;
+                  connectionCount(i) < 3 &&
+                  !lineIntersectsAny(selectedCircle, i);
 
     ctx.beginPath();
     ctx.arc(c.x, c.y, CIRCLE_R, 0, Math.PI * 2);
@@ -711,54 +765,31 @@ window.addEventListener('resize', () => {
 });
 </script>
 
-<!-- Banner instalación PWA -->
 <div id="installBanner">
   <div class="ib-icon">⬤</div>
-  <div class="ib-text">
-    <strong>Instalar app</strong>
-    <span>Juega sin conexión</span>
-  </div>
+  <div class="ib-text"><strong>Instalar app</strong><span>Juega sin conexión</span></div>
   <button class="ib-btn" id="installBtn">Instalar</button>
   <button class="ib-close" id="installClose">✕</button>
 </div>
 
 <script>
-// ── PWA: Service Worker ──
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  });
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(()=>{}); });
 }
-
-// ── PWA: Banner instalación ──
 let deferredPrompt = null;
 const banner = document.getElementById('installBanner');
 const installBtn = document.getElementById('installBtn');
 const closeBtn = document.getElementById('installClose');
-
 window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredPrompt = e;
+  e.preventDefault(); deferredPrompt = e;
   setTimeout(() => banner.classList.add('show'), 1500);
 });
-
 installBtn.addEventListener('click', async () => {
   banner.classList.remove('show');
-  if (deferredPrompt) {
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt = null;
-  }
+  if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; }
 });
-
-closeBtn.addEventListener('click', () => {
-  banner.classList.remove('show');
-});
-
-window.addEventListener('appinstalled', () => {
-  banner.classList.remove('show');
-  deferredPrompt = null;
-});
+closeBtn.addEventListener('click', () => banner.classList.remove('show'));
+window.addEventListener('appinstalled', () => { banner.classList.remove('show'); deferredPrompt = null; });
 </script>
 </body>
 </html>
