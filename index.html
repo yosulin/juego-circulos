@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Juego de Círculos</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a1f2e;
+    --surface: #252b3b;
+    --border: #343d54;
+    --p1-color: #f4844a;
+    --p2-color: #5b9cf6;
+    --p1-light: rgba(244,132,74,0.25);
+    --p2-light: rgba(91,156,246,0.25);
+    --text: #e8eaf0;
+    --muted: #7a82a0;
+    --circle-r: 14;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Nunito', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    gap: 16px;
+  }
+
+  h1 {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+    color: var(--text);
+    text-align: center;
+  }
+
+  /* ── Panel superior ── */
+  .top-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: nowrap;   /* SIEMPRE en una fila */
+    width: 100%;
+    max-width: 720px;
+  }
+
+  .player-card {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    flex: 1;             /* ocupa espacio disponible equitativamente */
+    min-width: 0;        /* permite shrink */
+    transition: border-color .3s, box-shadow .3s;
+  }
+  .player-card.active { box-shadow: 0 0 0 3px currentColor; }
+  .player-card.p1 { color: var(--p1-color); }
+  .player-card.p1.active { border-color: var(--p1-color); }
+  .player-card.p2 { color: var(--p2-color); }
+  .player-card.p2.active { border-color: var(--p2-color); }
+
+  .player-name {
+    font-weight: 700; font-size: .72rem; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  }
+  .player-score { font-family: 'Fredoka One', cursive; font-size: 1.8rem; line-height: 1; }
+  .player-initial { font-size: .8rem; font-weight: 600; }
+
+  /* ── Dado ── */
+  .dice-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;      /* el dado no se encoge */
+  }
+
+  .dice {
+    width: 52px; height: 52px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    padding: 6px;
+    gap: 3px;
+    cursor: pointer;
+    transition: transform .15s, border-color .15s;
+    position: relative;
+  }
+  .dice:hover { border-color: var(--muted); transform: scale(1.05); }
+  .dice.rolling { animation: shake .4s ease; }
+
+  @keyframes shake {
+    0%,100% { transform: rotate(0deg) scale(1); }
+    20% { transform: rotate(-12deg) scale(1.08); }
+    40% { transform: rotate(10deg) scale(1.08); }
+    60% { transform: rotate(-8deg) scale(1.05); }
+    80% { transform: rotate(6deg) scale(1.05); }
+  }
+
+  .dot {
+    border-radius: 50%;
+    background: var(--text);
+    width: 100%; height: 100%;
+    visibility: hidden;
+  }
+  /* posiciones de los puntos en la cuadrícula 3x3 */
+  .dot.on { visibility: visible; }
+
+  .dice-label {
+    font-size: .7rem;
+    color: var(--muted);
+    text-align: center;
+    white-space: nowrap;
+  }
+  .lines-left {
+    font-family: 'Fredoka One', cursive;
+    font-size: .95rem;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* ── Turno info ── */
+  .turn-info {
+    font-size: .9rem;
+    color: var(--muted);
+    text-align: center;
+    min-height: 1.4em;
+  }
+  .turn-info span { font-weight: 700; }
+
+  /* ── Canvas ── */
+  .canvas-wrap {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 700px;
+    aspect-ratio: 1;
+    position: relative;
+  }
+
+  #gameCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+
+  /* ── Botón nuevo juego ── */
+  .btn-new {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-family: 'Nunito', sans-serif;
+    font-size: .9rem;
+    font-weight: 700;
+    padding: 10px 24px;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .btn-new:hover { border-color: var(--muted); background: var(--border); }
+
+  /* ── Modal fin de juego ── */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.65);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 24px;
+    padding: 36px 48px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .modal h2 { font-family: 'Fredoka One', cursive; font-size: 2rem; }
+  .modal p { color: var(--muted); }
+
+  /* ── Banner instalación PWA ── */
+  #installBanner {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #252b3b;
+    border: 2px solid #5b9cf6;
+    border-radius: 16px;
+    padding: 14px 20px;
+    z-index: 200;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    max-width: 320px;
+    width: 90%;
+  }
+  #installBanner.show { display: flex; }
+  #installBanner .ib-icon { font-size: 1.8rem; flex-shrink:0; }
+  #installBanner .ib-text { flex:1; }
+  #installBanner .ib-text strong { display:block; font-family:'Fredoka One',cursive; font-size:1rem; color:#e8eaf0; }
+  #installBanner .ib-text span { font-size:.75rem; color:#7a82a0; }
+  #installBanner .ib-btn {
+    background: #5b9cf6;
+    color: #1a1f2e;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    font-size: .85rem;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #installBanner .ib-close {
+    background: none; border: none; color: #7a82a0;
+    font-size: 1.1rem; cursor: pointer; padding: 0; flex-shrink:0;
+  }
+</style>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1a1f2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Círculos">
+  <link rel="apple-touch-icon" href="icon-192.png">
+</head>
+<body>
+
+<h1>⬤ Juego de Círculos</h1>
+
+<!-- Config de nombres -->
+<div id="setupPanel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;">
+  <input id="nameP1" placeholder="Jugador 1" maxlength="12"
+    style="background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--text);font-family:Nunito,sans-serif;font-size:.9rem;padding:8px 14px;outline:none;width:140px;">
+  <input id="nameP2" placeholder="Jugador 2" maxlength="12"
+    style="background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--text);font-family:Nunito,sans-serif;font-size:.9rem;padding:8px 14px;outline:none;width:140px;">
+  <button class="btn-new" onclick="startGame()">▶ Empezar</button>
+</div>
+
+<div id="gameUI" style="display:none;width:100%;max-width:720px;display:none;flex-direction:column;align-items:center;gap:16px;">
+
+  <div class="top-panel">
+    <div class="player-card p1" id="card1">
+      <span class="player-name" id="label1">J1</span>
+      <span class="player-score" id="score1">0</span>
+      <span class="player-initial" id="init1">J</span>
+    </div>
+
+    <div class="dice-area">
+      <div class="dice" id="dice" onclick="rollDice()">
+        <!-- 9 celdas 3x3, las activamos según el número -->
+        <div class="dot" id="d1"></div>
+        <div class="dot" id="d2"></div>
+        <div class="dot" id="d3"></div>
+        <div class="dot" id="d4"></div>
+        <div class="dot" id="d5"></div>
+        <div class="dot" id="d6"></div>
+        <div class="dot" id="d7"></div>
+        <div class="dot" id="d8"></div>
+        <div class="dot" id="d9"></div>
+      </div>
+      <div class="dice-label">
+        <div id="linesLeftLabel" class="lines-left">Tira el dado</div>
+      </div>
+    </div>
+
+    <div class="player-card p2" id="card2">
+      <span class="player-name" id="label2">J2</span>
+      <span class="player-score" id="score2">0</span>
+      <span class="player-initial" id="init2">J</span>
+    </div>
+  </div>
+
+  <div class="turn-info" id="turnInfo">–</div>
+
+  <div class="canvas-wrap">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <button class="btn-new" onclick="confirmNewGame()">↺ Nuevo juego</button>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">¡Fin del juego!</h2>
+    <p id="modalBody"></p>
+    <button class="btn-new" onclick="startGame()">▶ Jugar de nuevo</button>
+  </div>
+</div>
+
+<script>
+// ── Constantes ──────────────────────────────────────────────────────────────
+const CIRCLE_R  = 14;    // radio visual
+const HIT_R     = 22;    // radio de click
+const MIN_DIST  = 70;    // distancia mínima entre centros
+const MAX_DIST  = 160;   // distancia máxima para ser adyacentes
+const N_CIRCLES = 22;    // número de círculos
+
+// Disposiciones de puntos en el dado (cuadrícula 3x3, índices 0-8)
+const DICE_DOTS = {
+  1: [4],
+  2: [0,8],
+  3: [0,4,8],
+  4: [0,2,6,8],
+  5: [0,2,4,6,8],
+  6: [0,2,3,5,6,8]
+};
+
+// ── Estado ──────────────────────────────────────────────────────────────────
+let circles = [];      // {x,y}
+let edges   = new Set(); // "i-j" (i<j)
+let triangles= [];     // {a,b,c,owner}
+let players = [{name:'J1',initial:'J',score:0},{name:'J2',initial:'J',score:0}];
+let currentPlayer = 0;
+let linesLeft = 0;     // líneas que puede trazar este turno (tras tirar dado)
+let diceRolled = false;
+let selectedCircle = null;
+
+let canvas, ctx, W, H;
+
+// ── Inicio ──────────────────────────────────────────────────────────────────
+function startGame() {
+  const n1 = document.getElementById('nameP1').value.trim() || 'Jugador 1';
+  const n2 = document.getElementById('nameP2').value.trim() || 'Jugador 2';
+  players = [
+    {name: n1, initial: n1[0].toUpperCase(), score: 0},
+    {name: n2, initial: n2[0].toUpperCase(), score: 0}
+  ];
+
+  document.getElementById('setupPanel').style.display = 'none';
+  const ui = document.getElementById('gameUI');
+  ui.style.display = 'flex';
+
+  document.getElementById('label1').textContent = n1;
+  document.getElementById('label2').textContent = n2;
+  document.getElementById('init1').textContent  = players[0].initial;
+  document.getElementById('init2').textContent  = players[1].initial;
+  document.getElementById('score1').textContent = '0';
+  document.getElementById('score2').textContent = '0';
+  document.getElementById('modalOverlay').classList.remove('show');
+
+  canvas = document.getElementById('gameCanvas');
+  const wrap = canvas.parentElement;
+  const sz   = wrap.clientWidth;
+  canvas.width  = sz;
+  canvas.height = sz;
+  W = H = sz;
+  ctx = canvas.getContext('2d');
+
+  edges      = new Set();
+  triangles  = [];
+  currentPlayer = 0;
+  linesLeft  = 0;
+  diceRolled = false;
+  selectedCircle = null;
+
+  generateCircles();
+  updateDiceDisplay(0);
+  updateActiveCards();
+  updateTurnInfo();
+  draw();
+
+  canvas.onclick = handleCanvasClick;
+}
+
+function confirmNewGame() {
+  if (confirm('¿Empezar nuevo juego?')) startGame();
+}
+
+// ── Generación de círculos ───────────────────────────────────────────────────
+function generateCircles() {
+  circles = [];
+  const padding = CIRCLE_R + 20;
+  let attempts = 0;
+  while (circles.length < N_CIRCLES && attempts < 5000) {
+    attempts++;
+    const x = padding + Math.random() * (W - padding * 2);
+    const y = padding + Math.random() * (H - padding * 2);
+    let valid = true;
+    for (const c of circles) {
+      if (dist(x, y, c.x, c.y) < MIN_DIST) { valid = false; break; }
+    }
+    if (valid) circles.push({x, y});
+  }
+}
+
+// ── Dado ─────────────────────────────────────────────────────────────────────
+function rollDice() {
+  if (diceRolled && linesLeft > 0) return; // ya tiró y le quedan líneas
+  const dice = document.getElementById('dice');
+  dice.classList.add('rolling');
+  setTimeout(() => {
+    dice.classList.remove('rolling');
+    const val = Math.floor(Math.random() * 6) + 1;
+    linesLeft  = val;
+    diceRolled = true;
+    updateDiceDisplay(val);
+    updateTurnInfo();
+  }, 420);
+}
+
+function updateDiceDisplay(val) {
+  const dots = document.querySelectorAll('.dot');
+  dots.forEach(d => d.classList.remove('on'));
+  if (val > 0) {
+    DICE_DOTS[val].forEach(i => dots[i].classList.add('on'));
+  }
+  const ll = document.getElementById('linesLeftLabel');
+  if (val === 0) {
+    ll.textContent = 'Tira el dado';
+  } else if (linesLeft > 0) {
+    ll.textContent = `${linesLeft} línea${linesLeft !== 1 ? 's' : ''}`;
+  } else {
+    ll.textContent = 'Sin líneas';
+  }
+}
+
+// ── Canvas click ──────────────────────────────────────────────────────────────
+function handleCanvasClick(e) {
+  if (!diceRolled || linesLeft <= 0) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top)  * scaleY;
+
+  // ¿Hizo click sobre un círculo?
+  const hit = circles.findIndex(c => dist(mx, my, c.x, c.y) < HIT_R);
+  if (hit === -1) { selectedCircle = null; draw(); return; }
+
+  if (selectedCircle === null) {
+    selectedCircle = hit;
+    draw();
+    return;
+  }
+
+  if (selectedCircle === hit) {
+    selectedCircle = null;
+    draw();
+    return;
+  }
+
+  // Intentar trazar línea
+  const a = Math.min(selectedCircle, hit);
+  const b = Math.max(selectedCircle, hit);
+  const key = `${a}-${b}`;
+
+  if (edges.has(key)) {
+    // ya existe, simplemente seleccionar el nuevo
+    selectedCircle = hit;
+    draw();
+    return;
+  }
+
+  if (dist(circles[a].x, circles[a].y, circles[b].x, circles[b].y) > MAX_DIST) {
+    // no adyacentes
+    selectedCircle = hit;
+    draw();
+    return;
+  }
+
+  // Máximo 3 conexiones por círculo
+  if (connectionCount(a) >= 3 || connectionCount(b) >= 3) {
+    selectedCircle = hit;
+    draw();
+    return;
+  }
+
+  // Trazar
+  edges.add(key);
+  linesLeft--;
+
+  // Buscar triángulos nuevos
+  const newTris = findNewTriangles(a, b);
+  newTris.forEach(tri => {
+    triangles.push({...tri, owner: currentPlayer});
+    players[currentPlayer].score++;
+  });
+  updateScores();
+
+  selectedCircle = null;
+  draw();
+
+  if (linesLeft === 0) {
+    diceRolled = false;
+    updateDiceDisplay(0);
+    // ¿Fin del juego? (no quedan más aristas posibles)
+    if (noMoreMoves()) { endGame(); return; }
+    currentPlayer = 1 - currentPlayer;
+    updateActiveCards();
+    updateTurnInfo();
+  } else {
+    updateDiceDisplay(null);
+    document.getElementById('linesLeftLabel').textContent = `${linesLeft} línea${linesLeft !== 1 ? 's' : ''}`;
+    updateTurnInfo();
+  }
+}
+
+// ── Detección de triángulos ───────────────────────────────────────────────────
+function edgeExists(i, j) {
+  return edges.has(`${Math.min(i,j)}-${Math.max(i,j)}`);
+}
+
+function connectionCount(idx) {
+  let count = 0;
+  edges.forEach(key => {
+    const [i, j] = key.split('-').map(Number);
+    if (i === idx || j === idx) count++;
+  });
+  return count;
+}
+
+function areAdjacent(i, j) {
+  return dist(circles[i].x, circles[i].y, circles[j].x, circles[j].y) <= MAX_DIST;
+}
+
+function findNewTriangles(a, b) {
+  const found = [];
+  for (let c = 0; c < circles.length; c++) {
+    if (c === a || c === b) continue;
+    // Las TRES aristas deben existir como edges y además ser adyacentes
+    if (!edgeExists(a, c) || !edgeExists(b, c)) continue;
+    if (!areAdjacent(a, c) || !areAdjacent(b, c)) continue;
+    // No duplicar triángulos ya registrados
+    const key3 = [a, b, c].sort((x,y)=>x-y).join('-');
+    const already = triangles.some(t => [t.a,t.b,t.c].sort((x,y)=>x-y).join('-') === key3);
+    if (already) continue;
+    found.push({a, b, c});
+  }
+  return found;
+}
+
+// ── ¿Quedan movimientos? ──────────────────────────────────────────────────────
+function noMoreMoves() {
+  for (let i = 0; i < circles.length; i++) {
+    if (connectionCount(i) >= 3) continue;
+    for (let j = i+1; j < circles.length; j++) {
+      if (connectionCount(j) >= 3) continue;
+      if (!edges.has(`${i}-${j}`) &&
+          dist(circles[i].x,circles[i].y,circles[j].x,circles[j].y) <= MAX_DIST) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────────
+function updateScores() {
+  document.getElementById('score1').textContent = players[0].score;
+  document.getElementById('score2').textContent = players[1].score;
+}
+
+function updateActiveCards() {
+  document.getElementById('card1').classList.toggle('active', currentPlayer === 0);
+  document.getElementById('card2').classList.toggle('active', currentPlayer === 1);
+}
+
+function updateTurnInfo() {
+  const p = players[currentPlayer];
+  const color = currentPlayer === 0 ? 'var(--p1-color)' : 'var(--p2-color)';
+  const el = document.getElementById('turnInfo');
+  if (!diceRolled) {
+    el.innerHTML = `Turno de <span style="color:${color}">${p.name}</span> — tira el dado`;
+  } else {
+    el.innerHTML = `<span style="color:${color}">${p.name}</span> — traza ${linesLeft} línea${linesLeft!==1?'s':''} más`;
+  }
+}
+
+function endGame() {
+  const s1 = players[0].score, s2 = players[1].score;
+  document.getElementById('modalTitle').textContent = '¡Fin del juego!';
+  let body = `${players[0].name}: ${s1} triángulos &nbsp;·&nbsp; ${players[1].name}: ${s2} triángulos<br><br>`;
+  if (s1 > s2) body += `🏆 ¡Gana <strong>${players[0].name}</strong>!`;
+  else if (s2 > s1) body += `🏆 ¡Gana <strong>${players[1].name}</strong>!`;
+  else body += `🤝 ¡Empate!`;
+  document.getElementById('modalBody').innerHTML = body;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+// ── Dibujo ────────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Triángulos rellenos
+  triangles.forEach(t => {
+    const ca = circles[t.a], cb = circles[t.b], cc = circles[t.c];
+    ctx.beginPath();
+    ctx.moveTo(ca.x, ca.y);
+    ctx.lineTo(cb.x, cb.y);
+    ctx.lineTo(cc.x, cc.y);
+    ctx.closePath();
+    ctx.fillStyle = t.owner === 0 ? 'rgba(244,132,74,0.22)' : 'rgba(91,156,246,0.22)';
+    ctx.fill();
+
+    // Inicial del jugador centrada
+    const cx = (ca.x + cb.x + cc.x) / 3;
+    const cy = (ca.y + cb.y + cc.y) / 3;
+    ctx.font = 'bold 14px Nunito, sans-serif';
+    ctx.fillStyle = t.owner === 0 ? '#f4844a' : '#5b9cf6';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(players[t.owner].initial, cx, cy);
+  });
+
+  // Líneas existentes
+  edges.forEach(key => {
+    const [i, j] = key.split('-').map(Number);
+    drawLine(circles[i], circles[j], 'rgba(255,255,255,0.18)', 2);
+  });
+
+  // Línea provisional: desde seleccionado hasta cursor (no implementada — se dibuja abajo)
+
+  // Líneas adyacentes posibles del seleccionado (hint visual)
+  if (selectedCircle !== null && linesLeft > 0) {
+    const sc = circles[selectedCircle];
+    circles.forEach((c, i) => {
+      if (i === selectedCircle) return;
+      if (dist(sc.x, sc.y, c.x, c.y) <= MAX_DIST &&
+          !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
+          connectionCount(selectedCircle) < 3 &&
+          connectionCount(i) < 3) {
+        drawLine(sc, c, 'rgba(255,255,255,0.07)', 1.5);
+      }
+    });
+  }
+
+  // Círculos
+  circles.forEach((c, i) => {
+    const isSelected = i === selectedCircle;
+    const isAdj = selectedCircle !== null && i !== selectedCircle &&
+                  dist(circles[selectedCircle].x, circles[selectedCircle].y, c.x, c.y) <= MAX_DIST &&
+                  !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
+                  connectionCount(selectedCircle) < 3 &&
+                  connectionCount(i) < 3;
+
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, CIRCLE_R, 0, Math.PI * 2);
+
+    if (isSelected) {
+      ctx.fillStyle = currentPlayer === 0 ? 'rgba(244,132,74,0.5)' : 'rgba(91,156,246,0.5)';
+      ctx.strokeStyle = currentPlayer === 0 ? '#f4844a' : '#5b9cf6';
+      ctx.lineWidth = 3;
+    } else if (isAdj && linesLeft > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 2;
+    } else {
+      ctx.fillStyle = '#2e364a';
+      ctx.strokeStyle = '#4a5370';
+      ctx.lineWidth = 2;
+    }
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+function drawLine(a, b, color, width) {
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+}
+
+// ── Utilidades ────────────────────────────────────────────────────────────────
+function dist(x1,y1,x2,y2) {
+  return Math.sqrt((x2-x1)**2 + (y2-y1)**2);
+}
+
+// Responsive: redibujar si cambia el tamaño
+window.addEventListener('resize', () => {
+  if (!canvas) return;
+  const wrap = canvas.parentElement;
+  const sz   = wrap.clientWidth;
+  // Reescalar posiciones
+  const scale = sz / W;
+  circles.forEach(c => { c.x *= scale; c.y *= scale; });
+  canvas.width = canvas.height = W = H = sz;
+  draw();
+});
+</script>
+
+<!-- Banner instalación PWA -->
+<div id="installBanner">
+  <div class="ib-icon">⬤</div>
+  <div class="ib-text">
+    <strong>Instalar app</strong>
+    <span>Juega sin conexión</span>
+  </div>
+  <button class="ib-btn" id="installBtn">Instalar</button>
+  <button class="ib-close" id="installClose">✕</button>
+</div>
+
+<script>
+// ── PWA: Service Worker ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+// ── PWA: Banner instalación ──
+let deferredPrompt = null;
+const banner = document.getElementById('installBanner');
+const installBtn = document.getElementById('installBtn');
+const closeBtn = document.getElementById('installClose');
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  setTimeout(() => banner.classList.add('show'), 1500);
+});
+
+installBtn.addEventListener('click', async () => {
+  banner.classList.remove('show');
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+  }
+});
+
+closeBtn.addEventListener('click', () => {
+  banner.classList.remove('show');
+});
+
+window.addEventListener('appinstalled', () => {
+  banner.classList.remove('show');
+  deferredPrompt = null;
+});
+</script>
+</body>
+</html>
