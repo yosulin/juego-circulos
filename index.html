@@ -557,10 +557,26 @@ function segmentsIntersect(x1,y1,x2,y2, x3,y3,x4,y4) {
   return t > margin && t < 1-margin && u > margin && u < 1-margin;
 }
 
+// Distancia de punto (px,py) al segmento (ax,ay)-(bx,by)
+function pointToSegmentDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx*dx + dy*dy;
+  if (lenSq === 0) return Math.hypot(px-ax, py-ay);
+  let t = ((px-ax)*dx + (py-ay)*dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t*dx), py - (ay + t*dy));
+}
+
 // ¿El segmento a-b cruza alguna arista existente o atraviesa algún triángulo cerrado?
 function lineIntersectsAny(idxA, idxB) {
   const ax = circles[idxA].x, ay = circles[idxA].y;
   const bx = circles[idxB].x, by = circles[idxB].y;
+
+  // 0. Comprobar que la línea no pasa por encima de otro círculo
+  for (let k = 0; k < circles.length; k++) {
+    if (k === idxA || k === idxB) continue;
+    if (pointToSegmentDist(circles[k].x, circles[k].y, ax, ay, bx, by) < CIRCLE_R + 4) return true;
+  }
 
   // 1. Comprobar cruce con aristas existentes
   for (const key of edges) {
