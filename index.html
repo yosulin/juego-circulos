@@ -463,13 +463,6 @@ function handleCanvasClick(e) {
     return;
   }
 
-  // Máximo 3 conexiones por círculo
-  if (connectionCount(a) >= 3 || connectionCount(b) >= 3) {
-    selectedCircle = hit;
-    draw();
-    return;
-  }
-
   // No cruzar aristas existentes ni atravesar triángulos ya cerrados
   if (lineIntersectsAny(a, b)) {
     selectedCircle = hit;
@@ -638,9 +631,7 @@ function findNewTriangles(a, b) {
 // ── ¿Quedan movimientos? ──────────────────────────────────────────────────────
 function noMoreMoves() {
   for (let i = 0; i < circles.length; i++) {
-    if (connectionCount(i) >= 3) continue;
     for (let j = i+1; j < circles.length; j++) {
-      if (connectionCount(j) >= 3) continue;
       if (!edges.has(`${i}-${j}`) &&
           dist(circles[i].x,circles[i].y,circles[j].x,circles[j].y) <= MAX_DIST &&
           !lineIntersectsAny(i, j)) {
