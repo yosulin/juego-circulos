@@ -217,6 +217,103 @@
   #installBanner .ib-text span { font-size:.75rem; color:#7a82a0; }
   #installBanner .ib-btn { background: #5b9cf6; color: #1a1f2e; border: none; border-radius: 10px; padding: 8px 14px; font-family:'Nunito',sans-serif; font-weight:700; font-size:.85rem; cursor:pointer; white-space:nowrap; flex-shrink:0; }
   #installBanner .ib-close { background:none; border:none; color:#7a82a0; font-size:1.1rem; cursor:pointer; padding:0; flex-shrink:0; }
+
+  /* ── Setup Panel ── */
+  .setup-box {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 20px;
+    padding: 24px 20px;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .setup-section { display: flex; flex-direction: column; gap: 10px; }
+  .setup-label {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+  }
+  /* Selector número de jugadores */
+  .player-count-row {
+    display: flex;
+    gap: 8px;
+  }
+  .pc-btn {
+    flex: 1;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.1rem;
+    padding: 10px 4px;
+    cursor: pointer;
+    transition: all .2s;
+    text-align: center;
+  }
+  .pc-btn.active {
+    background: var(--surface);
+    border-color: var(--p1-color);
+    color: var(--p1-color);
+  }
+  /* Inputs de nombres */
+  .names-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .name-input-wrap { position: relative; }
+  .name-dot {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+  .setup-input {
+    width: 100%;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'Nunito', sans-serif;
+    font-size: .85rem;
+    padding: 9px 10px 9px 26px;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color .2s;
+  }
+  .setup-input:focus { border-color: var(--muted); }
+  /* Slider círculos */
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .slider-row input[type=range] {
+    flex: 1;
+    accent-color: var(--p2-color);
+    height: 4px;
+  }
+  .slider-val {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.3rem;
+    color: var(--text);
+    min-width: 36px;
+    text-align: right;
+  }
+  .rec-hint {
+    font-size: .72rem;
+    color: var(--p2-color);
+    min-height: 1em;
+  }
+
 </style>
 
   <link rel="manifest" href="manifest.json">
@@ -229,29 +326,52 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v1.5</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.0</div>
 
 <!-- Config de nombres -->
-<div id="setupPanel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;">
-  <input id="nameP1" placeholder="Jugador 1" maxlength="12"
-    style="background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--text);font-family:Nunito,sans-serif;font-size:.9rem;padding:8px 14px;outline:none;width:140px;">
-  <input id="nameP2" placeholder="Jugador 2" maxlength="12"
-    style="background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--text);font-family:Nunito,sans-serif;font-size:.9rem;padding:8px 14px;outline:none;width:140px;">
-  <button class="btn-new" onclick="startGame()">▶ Empezar</button>
+<div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
+  <div class="setup-box">
+
+    <!-- Número de jugadores -->
+    <div class="setup-section">
+      <div class="setup-label">Número de jugadores</div>
+      <div class="player-count-row" id="pcRow">
+        <div class="pc-btn active" onclick="setPlayerCount(1)">1</div>
+        <div class="pc-btn" onclick="setPlayerCount(2)">2</div>
+        <div class="pc-btn" onclick="setPlayerCount(3)">3</div>
+        <div class="pc-btn" onclick="setPlayerCount(4)">4</div>
+        <div class="pc-btn" onclick="setPlayerCount(5)">5</div>
+        <div class="pc-btn" onclick="setPlayerCount(6)">6</div>
+      </div>
+    </div>
+
+    <!-- Nombres -->
+    <div class="setup-section">
+      <div class="setup-label">Nombres</div>
+      <div class="names-grid" id="namesGrid"></div>
+    </div>
+
+    <!-- Tamaño del tablero -->
+    <div class="setup-section">
+      <div class="setup-label">Círculos en el tablero</div>
+      <div class="slider-row">
+        <input type="range" id="circleSlider" min="25" max="100" value="35"
+          oninput="onSliderChange(this.value)">
+        <div class="slider-val" id="sliderVal">35</div>
+      </div>
+      <div class="rec-hint" id="recHint"></div>
+    </div>
+
+  </div>
+  <button class="btn-new" onclick="startGame()" style="width:100%;max-width:480px;padding:14px;font-size:1rem;">▶ Empezar</button>
 </div>
 
 <div id="gameUI" style="display:none;width:100%;max-width:720px;display:none;flex-direction:column;align-items:center;gap:16px;">
 
-  <div class="top-panel">
-    <div class="player-card p1" id="card1">
-      <span class="player-name" id="label1">J1</span>
-      <span class="player-score" id="score1">0</span>
-      <span class="player-initial" id="init1">J</span>
-    </div>
-
+  <!-- Tarjetas de jugadores: generadas dinámicamente por buildGameUI() -->
+  <div class="top-panel" id="topPanel" style="flex-wrap:wrap;">
     <div class="dice-area">
       <div class="dice" id="dice" onclick="rollDice()">
-        <!-- 9 celdas 3x3, las activamos según el número -->
         <div class="dot" id="d1"></div>
         <div class="dot" id="d2"></div>
         <div class="dot" id="d3"></div>
@@ -265,12 +385,6 @@
       <div class="dice-label">
         <div id="linesLeftLabel" class="lines-left">Tira el dado</div>
       </div>
-    </div>
-
-    <div class="player-card p2" id="card2">
-      <span class="player-name" id="label2">J2</span>
-      <span class="player-score" id="score2">0</span>
-      <span class="player-initial" id="init2">J</span>
     </div>
   </div>
 
@@ -298,7 +412,7 @@ const CIRCLE_R  = 14;    // radio visual
 const HIT_R     = 22;    // radio de click
 const MIN_DIST  = 70;    // distancia mínima entre centros
 const MAX_DIST  = 160;   // distancia máxima para ser adyacentes
-const N_CIRCLES = 22;    // número de círculos
+let N_CIRCLES = 35;    // número de círculos (configurable)
 
 // Disposiciones de puntos en el dado (cuadrícula 3x3, índices 0-8)
 const DICE_DOTS = {
@@ -324,24 +438,23 @@ let canvas, ctx, W, H;
 
 // ── Inicio ──────────────────────────────────────────────────────────────────
 function startGame() {
-  const n1 = document.getElementById('nameP1').value.trim() || 'Jugador 1';
-  const n2 = document.getElementById('nameP2').value.trim() || 'Jugador 2';
-  players = [
-    {name: n1, initial: n1[0].toUpperCase(), score: 0},
-    {name: n2, initial: n2[0].toUpperCase(), score: 0}
-  ];
+  // Leer nombres dinámicos
+  players = [];
+  for (let i = 0; i < numPlayers; i++) {
+    const el = document.getElementById(`nameInput${i}`);
+    const raw = el ? el.value.trim() : '';
+    const name = raw || `Jugador ${i+1}`;
+    players.push({name, initial: name[0].toUpperCase(), score: 0});
+  }
+  // Leer número de círculos del slider
+  N_CIRCLES = parseInt(document.getElementById('circleSlider').value) || 35;
 
   document.getElementById('setupPanel').style.display = 'none';
   const ui = document.getElementById('gameUI');
   ui.style.display = 'flex';
 
-  document.getElementById('label1').textContent = n1;
-  document.getElementById('label2').textContent = n2;
-  document.getElementById('init1').textContent  = players[0].initial;
-  document.getElementById('init2').textContent  = players[1].initial;
-  document.getElementById('score1').textContent = '0';
-  document.getElementById('score2').textContent = '0';
   document.getElementById('modalOverlay').classList.remove('show');
+  buildGameUI();
 
   canvas = document.getElementById('gameCanvas');
   const wrap = canvas.parentElement;
@@ -671,18 +784,22 @@ function noMoreMoves() {
 
 // ── UI ────────────────────────────────────────────────────────────────────────
 function updateScores() {
-  document.getElementById('score1').textContent = players[0].score;
-  document.getElementById('score2').textContent = players[1].score;
+  players.forEach((p, i) => {
+    const el = document.getElementById(`score${i+1}`);
+    if (el) el.textContent = p.score;
+  });
 }
 
 function updateActiveCards() {
-  document.getElementById('card1').classList.toggle('active', currentPlayer === 0);
-  document.getElementById('card2').classList.toggle('active', currentPlayer === 1);
+  players.forEach((_, i) => {
+    const el = document.getElementById(`card${i+1}`);
+    if (el) el.classList.toggle('active', currentPlayer === i);
+  });
 }
 
 function updateTurnInfo() {
   const p = players[currentPlayer];
-  const color = currentPlayer === 0 ? 'var(--p1-color)' : 'var(--p2-color)';
+  const color = PLAYER_COLORS[currentPlayer] || 'var(--p1-color)';
   const el = document.getElementById('turnInfo');
   if (!diceRolled) {
     el.innerHTML = `Turno de <span style="color:${color}">${p.name}</span> — tira el dado`;
@@ -692,12 +809,21 @@ function updateTurnInfo() {
 }
 
 function endGame() {
-  const s1 = players[0].score, s2 = players[1].score;
   document.getElementById('modalTitle').textContent = '¡Fin del juego!';
-  let body = `${players[0].name}: ${s1} triángulos &nbsp;·&nbsp; ${players[1].name}: ${s2} triángulos<br><br>`;
-  if (s1 > s2) body += `🏆 ¡Gana <strong>${players[0].name}</strong>!`;
-  else if (s2 > s1) body += `🏆 ¡Gana <strong>${players[1].name}</strong>!`;
-  else body += `🤝 ¡Empate!`;
+  // Tabla de resultados
+  const sorted = [...players].map((p,i) => ({...p, idx:i})).sort((a,b) => b.score - a.score);
+  let body = sorted.map(p => {
+    const color = PLAYER_COLORS[p.idx];
+    return `<span style="color:${color};font-weight:700">${p.name}</span>: ${p.score} triángulo${p.score!==1?'s':''}`;
+  }).join('&nbsp; · &nbsp;');
+  body += '<br><br>';
+  const maxScore = sorted[0].score;
+  const winners = sorted.filter(p => p.score === maxScore);
+  if (winners.length > 1) {
+    body += `🤝 ¡Empate entre ${winners.map(p=>`<strong>${p.name}</strong>`).join(' y ')}!`;
+  } else {
+    body += `🏆 ¡Gana <strong style="color:${PLAYER_COLORS[winners[0].idx]}">${winners[0].name}</strong>!`;
+  }
   document.getElementById('modalBody').innerHTML = body;
   document.getElementById('modalOverlay').classList.add('show');
 }
@@ -714,14 +840,14 @@ function draw() {
     ctx.lineTo(cb.x, cb.y);
     ctx.lineTo(cc.x, cc.y);
     ctx.closePath();
-    ctx.fillStyle = t.owner === 0 ? 'rgba(244,132,74,0.22)' : 'rgba(91,156,246,0.22)';
+    ctx.fillStyle = PLAYER_COLORS_LIGHT[t.owner] || 'rgba(255,255,255,0.1)';
     ctx.fill();
 
     // Inicial del jugador centrada
     const cx = (ca.x + cb.x + cc.x) / 3;
     const cy = (ca.y + cb.y + cc.y) / 3;
     ctx.font = 'bold 14px Nunito, sans-serif';
-    ctx.fillStyle = t.owner === 0 ? '#f4844a' : '#5b9cf6';
+    ctx.fillStyle = PLAYER_COLORS[t.owner] || '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(players[t.owner].initial, cx, cy);
@@ -760,8 +886,9 @@ function draw() {
     ctx.arc(c.x, c.y, CIRCLE_R, 0, Math.PI * 2);
 
     if (isSelected) {
-      ctx.fillStyle = currentPlayer === 0 ? 'rgba(244,132,74,0.5)' : 'rgba(91,156,246,0.5)';
-      ctx.strokeStyle = currentPlayer === 0 ? '#f4844a' : '#5b9cf6';
+      const pc = PLAYER_COLORS[currentPlayer] || '#ffffff';
+      ctx.fillStyle = pc + '80';
+      ctx.strokeStyle = pc;
       ctx.lineWidth = 3;
     } else if (isAdj && linesLeft > 0) {
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
@@ -790,6 +917,91 @@ function drawLine(a, b, color, width) {
 function dist(x1,y1,x2,y2) {
   return Math.sqrt((x2-x1)**2 + (y2-y1)**2);
 }
+
+
+// ── Colores para hasta 6 jugadores ──────────────────────────────────────────
+const PLAYER_COLORS = ["#f4844a", "#5b9cf6", "#6bcb77", "#f7c59f", "#d98cf0", "#ffd166"];
+const PLAYER_COLORS_LIGHT = ["rgba(244,132,74,0.22)", "rgba(91,156,246,0.22)", "rgba(107,203,119,0.22)", "rgba(247,197,159,0.22)", "rgba(217,140,240,0.22)", "rgba(255,209,102,0.22)"];
+
+// Recomendaciones de círculos según número de jugadores
+const CIRCLE_REC = {1:25, 2:35, 3:50, 4:65, 5:80, 6:100};
+
+let numPlayers = 1;
+
+function setPlayerCount(n) {
+  numPlayers = n;
+  document.querySelectorAll('.pc-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', i+1 === n);
+  });
+  buildNamesGrid();
+  // Sugerir círculos
+  const rec = CIRCLE_REC[n];
+  document.getElementById('circleSlider').value = rec;
+  document.getElementById('sliderVal').textContent = rec;
+  updateRecHint(n, rec);
+}
+
+function buildNamesGrid() {
+  const grid = document.getElementById('namesGrid');
+  grid.innerHTML = '';
+  for (let i = 0; i < numPlayers; i++) {
+    const color = PLAYER_COLORS[i];
+    const wrap = document.createElement('div');
+    wrap.className = 'name-input-wrap';
+    wrap.innerHTML = `
+      <div class="name-dot" style="background:${color}"></div>
+      <input class="setup-input" id="nameInput${i}"
+        placeholder="Jugador ${i+1}" maxlength="14">`;
+    grid.appendChild(wrap);
+  }
+}
+
+function onSliderChange(val) {
+  document.getElementById('sliderVal').textContent = val;
+  updateRecHint(numPlayers, parseInt(val));
+}
+
+function updateRecHint(n, val) {
+  const rec = CIRCLE_REC[n];
+  const hint = document.getElementById('recHint');
+  if (val === rec) {
+    hint.textContent = `✓ Tamaño recomendado para ${n} jugador${n>1?'es':''}`;
+  } else if (val < rec) {
+    hint.textContent = `Recomendado para ${n} jugador${n>1?'es':''}: ${rec} círculos`;
+  } else {
+    hint.textContent = `Recomendado para ${n} jugador${n>1?'es':''}: ${rec} círculos`;
+  }
+}
+
+function buildGameUI() {
+  const panel = document.getElementById('topPanel');
+  // Limpiar tarjetas anteriores (conservar el dado)
+  const diceArea = panel.querySelector('.dice-area');
+  panel.innerHTML = '';
+
+  // Insertar tarjetas: mitad antes del dado, mitad después (o todas antes si 1-3)
+  const half = Math.ceil(players.length / 2);
+  players.forEach((p, i) => {
+    const color = PLAYER_COLORS[i];
+    const pClass = i === 0 ? 'p1' : i === 1 ? 'p2' : '';
+    const card = document.createElement('div');
+    card.className = `player-card`;
+    card.id = `card${i+1}`;
+    card.style.cssText = `color:${color};border-color:var(--border);`;
+    card.innerHTML = `
+      <span class="player-name" id="label${i+1}">${p.name.toUpperCase()}</span>
+      <span class="player-score" id="score${i+1}">0</span>
+      <span class="player-initial" id="init${i+1}">${p.initial}</span>`;
+    if (i === half) panel.appendChild(diceArea);
+    panel.appendChild(card);
+  });
+  if (!panel.contains(diceArea)) panel.appendChild(diceArea);
+}
+
+// Inicializar setup al cargar
+window.addEventListener('DOMContentLoaded', () => {
+  setPlayerCount(2); // por defecto 2 jugadores
+});
 
 // Responsive: redibujar si cambia el tamaño
 window.addEventListener('resize', () => {
