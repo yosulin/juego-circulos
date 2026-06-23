@@ -565,38 +565,52 @@ function lineIntersectsAny(idxA, idxB) {
   const ax = circles[idxA].x, ay = circles[idxA].y;
   const bx = circles[idxB].x, by = circles[idxB].y;
 
-  // 0. Comprobar que la línea no pasa por encima de otro círculo
+  // 0. La línea no puede pasar POR ENCIMA de otro círculo (no extremo).
+  //    Usamos el radio visual como umbral — si el centro del círculo
+  //    queda más cerca que CIRCLE_R del segmento Y el punto de proyección
+  //    está estrictamente entre los dos extremos, lo bloqueamos.
   for (let k = 0; k < circles.length; k++) {
     if (k === idxA || k === idxB) continue;
-    if (pointToSegmentDist(circles[k].x, circles[k].y, ax, ay, bx, by) < CIRCLE_R + 4) return true;
+    const ck = circles[k];
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx*dx + dy*dy;
+    if (lenSq === 0) continue;
+    const t = Math.max(0, Math.min(1, ((ck.x-ax)*dx + (ck.y-ay)*dy) / lenSq));
+    // Solo bloqueamos si la proyección cae ENTRE los extremos (t en 0.05..0.95)
+    if (t > 0.05 && t < 0.95) {
+      const distSq = Math.pow(ck.x - (ax + t*dx), 2) + Math.pow(ck.y - (ay + t*dy), 2);
+      if (distSq < (CIRCLE_R * CIRCLE_R)) return true;
+    }
   }
 
-  // 1. Comprobar cruce con aristas existentes
+  // 1. La línea no puede cruzar aristas existentes que no compartan extremo.
   for (const key of edges) {
     const [i, j] = key.split('-').map(Number);
-    // Ignorar aristas que comparten un extremo con el nuevo segmento
     if (i === idxA || i === idxB || j === idxA || j === idxB) continue;
     const cx = circles[i].x, cy = circles[i].y;
     const dx = circles[j].x, dy = circles[j].y;
     if (segmentsIntersect(ax,ay,bx,by, cx,cy,dx,dy)) return true;
   }
 
-  // 2. Comprobar que la nueva línea no atraviesa ningún triángulo cerrado.
+  // 2. La línea no puede atravesar el INTERIOR de un triángulo cerrado.
+  //    Un lado del triángulo que comparte vértice con la nueva arista está permitido.
   for (const t of triangles) {
-    const tax = circles[t.a].x, tay = circles[t.a].y;
-    const tbx = circles[t.b].x, tby = circles[t.b].y;
-    const tcx = circles[t.c].x, tcy = circles[t.c].y;
+    // Vértices del triángulo
+    const va = t.a, vb = t.b, vc = t.c;
+    const tax = circles[va].x, tay = circles[va].y;
+    const tbx = circles[vb].x, tby = circles[vb].y;
+    const tcx = circles[vc].x, tcy = circles[vc].y;
 
-    // Extremos o punto medio dentro del triángulo
+    // Comprobar cruce con cada lado, ignorando lados que comparten vértice con idxA o idxB
+    const sides = [[va,vb,tax,tay,tbx,tby],[vb,vc,tbx,tby,tcx,tcy],[va,vc,tax,tay,tcx,tcy]];
+    for (const [si, sj, sx1,sy1,sx2,sy2] of sides) {
+      if (si === idxA || si === idxB || sj === idxA || sj === idxB) continue;
+      if (segmentsIntersect(ax,ay,bx,by, sx1,sy1,sx2,sy2)) return true;
+    }
+
+    // El punto medio de la nueva arista no puede estar dentro del triángulo
     const mid_x = (ax+bx)/2, mid_y = (ay+by)/2;
-    if (pointInTriangle(ax,  ay,  tax,tay,tbx,tby,tcx,tcy)) return true;
-    if (pointInTriangle(bx,  by,  tax,tay,tbx,tby,tcx,tcy)) return true;
     if (pointInTriangle(mid_x, mid_y, tax,tay,tbx,tby,tcx,tcy)) return true;
-
-    // El segmento cruza algún lado del triángulo
-    if (segmentsIntersect(ax,ay,bx,by, tax,tay,tbx,tby)) return true;
-    if (segmentsIntersect(ax,ay,bx,by, tbx,tby,tcx,tcy)) return true;
-    if (segmentsIntersect(ax,ay,bx,by, tax,tay,tcx,tcy)) return true;
   }
 
   return false;
