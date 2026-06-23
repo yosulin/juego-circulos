@@ -593,24 +593,36 @@ function lineIntersectsAny(idxA, idxB) {
   }
 
   // 2. La línea no puede atravesar el INTERIOR de un triángulo cerrado.
-  //    Un lado del triángulo que comparte vértice con la nueva arista está permitido.
   for (const t of triangles) {
-    // Vértices del triángulo
     const va = t.a, vb = t.b, vc = t.c;
     const tax = circles[va].x, tay = circles[va].y;
     const tbx = circles[vb].x, tby = circles[vb].y;
     const tcx = circles[vc].x, tcy = circles[vc].y;
 
-    // Comprobar cruce con cada lado, ignorando lados que comparten vértice con idxA o idxB
-    const sides = [[va,vb,tax,tay,tbx,tby],[vb,vc,tbx,tby,tcx,tcy],[va,vc,tax,tay,tcx,tcy]];
-    for (const [si, sj, sx1,sy1,sx2,sy2] of sides) {
+    // Si idxA o idxB son vértice de este triángulo, la línea sale desde dentro:
+    // solo bloqueamos si cruza un lado que NO comparte ese vértice.
+    const aInTri = (idxA === va || idxA === vb || idxA === vc);
+    const bInTri = (idxB === va || idxB === vb || idxB === vc);
+
+    const sides = [
+      [va, vb, tax, tay, tbx, tby],
+      [vb, vc, tbx, tby, tcx, tcy],
+      [va, vc, tax, tay, tcx, tcy]
+    ];
+
+    for (const [si, sj, sx1, sy1, sx2, sy2] of sides) {
+      // Ignorar lados que comparten vértice con los extremos de la nueva arista
       if (si === idxA || si === idxB || sj === idxA || sj === idxB) continue;
-      if (segmentsIntersect(ax,ay,bx,by, sx1,sy1,sx2,sy2)) return true;
+      if (segmentsIntersect(ax, ay, bx, by, sx1, sy1, sx2, sy2)) return true;
     }
 
-    // El punto medio de la nueva arista no puede estar dentro del triángulo
-    const mid_x = (ax+bx)/2, mid_y = (ay+by)/2;
-    if (pointInTriangle(mid_x, mid_y, tax,tay,tbx,tby,tcx,tcy)) return true;
+    // El punto medio no puede estar dentro del triángulo,
+    // SALVO que alguno de los extremos sea vértice de este triángulo
+    // (en ese caso la línea sale legítimamente hacia fuera)
+    if (!aInTri && !bInTri) {
+      const mid_x = (ax + bx) / 2, mid_y = (ay + by) / 2;
+      if (pointInTriangle(mid_x, mid_y, tax, tay, tbx, tby, tcx, tcy)) return true;
+    }
   }
 
   return false;
