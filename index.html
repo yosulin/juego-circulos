@@ -326,7 +326,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.0</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.1</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -512,7 +512,19 @@ function rollDice() {
     linesLeft  = val;
     diceRolled = true;
     updateDiceDisplay(val);
-    updateTurnInfo();
+    // Comprobar si hay movimientos disponibles tras tirar
+    const active = circlesWithMoves();
+    if (active.size === 0) {
+      if (noMoreMoves()) { endGame(); return; }
+      showBlockedMessage(val);
+      linesLeft = 0;
+      diceRolled = false;
+      updateDiceDisplay(0);
+      setTimeout(() => advanceTurn(), 1800);
+    } else {
+      updateTurnInfo();
+    }
+    draw();
   }, 420);
 }
 
@@ -602,16 +614,28 @@ function handleCanvasClick(e) {
   if (linesLeft === 0) {
     diceRolled = false;
     updateDiceDisplay(0);
-    // ¿Fin del juego? (no quedan más aristas posibles)
     if (noMoreMoves()) { endGame(); return; }
-    currentPlayer = 1 - currentPlayer;
-    updateActiveCards();
-    updateTurnInfo();
+    advanceTurn();
   } else {
+    // Quedan líneas — ¿hay movimientos válidos?
+    if (noMoreMoves()) { endGame(); return; }
+    const active = circlesWithMoves();
+    if (active.size === 0) {
+      // Bloqueado con líneas sobrantes — pasar turno
+      showBlockedMessage(linesLeft);
+      linesLeft = 0;
+      diceRolled = false;
+      updateDiceDisplay(0);
+      setTimeout(() => {
+        advanceTurn();
+      }, 1800);
+      return;
+    }
     updateDiceDisplay(null);
     document.getElementById('linesLeftLabel').textContent = `${linesLeft} línea${linesLeft !== 1 ? 's' : ''}`;
     updateTurnInfo();
   }
+  draw();
 }
 
 // ── Detección de triángulos ───────────────────────────────────────────────────
@@ -782,6 +806,22 @@ function noMoreMoves() {
   return true;
 }
 
+// Devuelve Set de índices de círculos que tienen al menos una conexión válida posible
+function circlesWithMoves() {
+  const active = new Set();
+  for (let i = 0; i < circles.length; i++) {
+    for (let j = i+1; j < circles.length; j++) {
+      if (!edges.has(`${i}-${j}`) &&
+          dist(circles[i].x,circles[i].y,circles[j].x,circles[j].y) <= MAX_DIST &&
+          !lineIntersectsAny(i, j)) {
+        active.add(i);
+        active.add(j);
+      }
+    }
+  }
+  return active;
+}
+
 // ── UI ────────────────────────────────────────────────────────────────────────
 function updateScores() {
   players.forEach((p, i) => {
@@ -806,6 +846,21 @@ function updateTurnInfo() {
   } else {
     el.innerHTML = `<span style="color:${color}">${p.name}</span> — traza ${linesLeft} línea${linesLeft!==1?'s':''} más`;
   }
+}
+
+function advanceTurn() {
+  currentPlayer = (currentPlayer + 1) % players.length;
+  updateActiveCards();
+  updateTurnInfo();
+  draw();
+}
+
+function showBlockedMessage(remaining) {
+  const p = players[currentPlayer];
+  const color = PLAYER_COLORS[currentPlayer] || '#fff';
+  const el = document.getElementById('turnInfo');
+  el.innerHTML = `<span style="color:${color}">${p.name}</span> — sin movimientos posibles, pierde ${remaining} línea${remaining !== 1 ? 's' : ''}`;
+  selectedCircle = null;
 }
 
 function endGame() {
@@ -874,6 +929,9 @@ function draw() {
     });
   }
 
+  // Calcular círculos con movimientos válidos (para apagar los bloqueados)
+  const activeCircles = diceRolled ? circlesWithMoves() : null;
+
   // Círculos
   circles.forEach((c, i) => {
     const isSelected = i === selectedCircle;
@@ -881,6 +939,7 @@ function draw() {
                   dist(circles[selectedCircle].x, circles[selectedCircle].y, c.x, c.y) <= MAX_DIST &&
                   !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
                   !lineIntersectsAny(selectedCircle, i);
+    const isBlocked = activeCircles !== null && !activeCircles.has(i);
 
     ctx.beginPath();
     ctx.arc(c.x, c.y, CIRCLE_R, 0, Math.PI * 2);
@@ -894,6 +953,12 @@ function draw() {
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
       ctx.lineWidth = 2;
+    } else if (isBlocked) {
+      // Sin movimientos posibles: muy apagado
+      ctx.fillStyle = '#1e2235';
+      ctx.strokeStyle = '#2a3048';
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.45;
     } else {
       ctx.fillStyle = '#2e364a';
       ctx.strokeStyle = '#4a5370';
@@ -901,6 +966,7 @@ function draw() {
     }
     ctx.fill();
     ctx.stroke();
+    ctx.globalAlpha = 1; // restaurar siempre
   });
 }
 
