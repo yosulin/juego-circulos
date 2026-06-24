@@ -314,6 +314,37 @@
     min-height: 1em;
   }
 
+  /* ── Toggle orden aleatorio ── */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-track {
+    width: 46px; height: 26px;
+    background: var(--border);
+    border-radius: 13px;
+    position: relative;
+    flex-shrink: 0;
+    transition: background .25s;
+  }
+  .toggle-track.on { background: var(--p2-color); }
+  .toggle-thumb {
+    width: 20px; height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    position: absolute;
+    top: 3px; left: 3px;
+    transition: left .25s;
+    box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  }
+  .toggle-track.on .toggle-thumb { left: 23px; }
+  .toggle-label-text { display: flex; flex-direction: column; gap: 1px; }
+  .toggle-label-text span { font-size: .88rem; font-weight: 600; color: var(--text); }
+  .toggle-sub { font-size: .72rem !important; font-weight: 400 !important; color: var(--muted) !important; }
+
 </style>
 
   <link rel="manifest" href="manifest.json">
