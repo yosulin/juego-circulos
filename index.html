@@ -326,7 +326,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.1</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.2</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -410,8 +410,8 @@
 // ── Constantes ──────────────────────────────────────────────────────────────
 const CIRCLE_R  = 14;    // radio visual
 const HIT_R     = 22;    // radio de click
-const MIN_DIST  = 70;    // distancia mínima entre centros
-const MAX_DIST  = 160;   // distancia máxima para ser adyacentes
+let MIN_DIST  = 70;    // distancia mínima entre centros (se recalcula)
+let MAX_DIST  = 160;   // distancia máxima para ser adyacentes (se recalcula)
 let N_CIRCLES = 35;    // número de círculos (configurable)
 
 // Disposiciones de puntos en el dado (cuadrícula 3x3, índices 0-8)
@@ -486,6 +486,14 @@ function confirmNewGame() {
 
 // ── Generación de círculos ───────────────────────────────────────────────────
 function generateCircles() {
+  // Ajustar distancias según número de círculos y tamaño del canvas
+  // Fórmula: área disponible / N_CIRCLES da el área por círculo → raíz = distancia media
+  const area = W * H;
+  const areaPerCircle = area / N_CIRCLES;
+  const avgDist = Math.sqrt(areaPerCircle);
+  MIN_DIST = Math.max(CIRCLE_R * 2 + 4, avgDist * 0.55);
+  MAX_DIST = avgDist * 1.45;
+
   circles = [];
   const padding = CIRCLE_R + 20;
   let attempts = 0;
