@@ -326,7 +326,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.2</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.3</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -408,8 +408,8 @@
 
 <script>
 // ── Constantes ──────────────────────────────────────────────────────────────
-const CIRCLE_R  = 14;    // radio visual
-const HIT_R     = 22;    // radio de click
+let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
+let HIT_R     = 22;    // radio de click (siempre táctil)
 let MIN_DIST  = 70;    // distancia mínima entre centros (se recalcula)
 let MAX_DIST  = 160;   // distancia máxima para ser adyacentes (se recalcula)
 let N_CIRCLES = 35;    // número de círculos (configurable)
@@ -486,12 +486,18 @@ function confirmNewGame() {
 
 // ── Generación de círculos ───────────────────────────────────────────────────
 function generateCircles() {
-  // Ajustar distancias según número de círculos y tamaño del canvas
-  // Fórmula: área disponible / N_CIRCLES da el área por círculo → raíz = distancia media
+  // Ajustar tamaño y distancias según N_CIRCLES
+  // Radio visual: interpola entre 16px (25 círculos) y 7px (100 círculos)
+  CIRCLE_R = Math.round(16 - (N_CIRCLES - 25) * (9 / 75));
+  CIRCLE_R = Math.max(7, Math.min(16, CIRCLE_R));
+  // Hit area táctil: siempre al menos 20px, escala un poco con el círculo
+  HIT_R = Math.max(20, CIRCLE_R + 8);
+
+  // Distancias: basadas en área disponible por círculo
   const area = W * H;
   const areaPerCircle = area / N_CIRCLES;
   const avgDist = Math.sqrt(areaPerCircle);
-  MIN_DIST = Math.max(CIRCLE_R * 2 + 4, avgDist * 0.55);
+  MIN_DIST = Math.max(CIRCLE_R * 2 + 6, avgDist * 0.55);
   MAX_DIST = avgDist * 1.45;
 
   circles = [];
