@@ -326,7 +326,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.3</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.4</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -336,8 +336,7 @@
     <div class="setup-section">
       <div class="setup-label">Número de jugadores</div>
       <div class="player-count-row" id="pcRow">
-        <div class="pc-btn active" onclick="setPlayerCount(1)">1</div>
-        <div class="pc-btn" onclick="setPlayerCount(2)">2</div>
+        <div class="pc-btn active" onclick="setPlayerCount(2)">2</div>
         <div class="pc-btn" onclick="setPlayerCount(3)">3</div>
         <div class="pc-btn" onclick="setPlayerCount(4)">4</div>
         <div class="pc-btn" onclick="setPlayerCount(5)">5</div>
@@ -360,6 +359,19 @@
         <div class="slider-val" id="sliderVal">35</div>
       </div>
       <div class="rec-hint" id="recHint"></div>
+    </div>
+
+    <!-- Orden aleatorio -->
+    <div class="setup-section">
+      <label class="toggle-row" onclick="toggleRandom()">
+        <div class="toggle-track" id="toggleTrack">
+          <div class="toggle-thumb" id="toggleThumb"></div>
+        </div>
+        <div class="toggle-label-text">
+          <span>Orden de inicio aleatorio</span>
+          <span class="toggle-sub">Se sortea quién empieza</span>
+        </div>
+      </label>
     </div>
 
   </div>
@@ -452,6 +464,14 @@ function startGame() {
   document.getElementById('setupPanel').style.display = 'none';
   const ui = document.getElementById('gameUI');
   ui.style.display = 'flex';
+
+  // Orden aleatorio: mezclar array de jugadores si está activado
+  if (randomOrder) {
+    for (let i = players.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [players[i], players[j]] = [players[j], players[i]];
+    }
+  }
 
   document.getElementById('modalOverlay').classList.remove('show');
   buildGameUI();
@@ -1006,12 +1026,19 @@ const PLAYER_COLORS_LIGHT = ["rgba(244,132,74,0.22)", "rgba(91,156,246,0.22)", "
 // Recomendaciones de círculos según número de jugadores
 const CIRCLE_REC = {1:25, 2:35, 3:50, 4:65, 5:80, 6:100};
 
-let numPlayers = 1;
+let numPlayers = 2;
+let randomOrder = false;
+
+function toggleRandom() {
+  randomOrder = !randomOrder;
+  const track = document.getElementById('toggleTrack');
+  track.classList.toggle('on', randomOrder);
+}
 
 function setPlayerCount(n) {
   numPlayers = n;
   document.querySelectorAll('.pc-btn').forEach((btn, i) => {
-    btn.classList.toggle('active', i+1 === n);
+    btn.classList.toggle('active', i+2 === n);  // empieza desde 2
   });
   buildNamesGrid();
   // Sugerir círculos
@@ -1080,7 +1107,7 @@ function buildGameUI() {
 
 // Inicializar setup al cargar
 window.addEventListener('DOMContentLoaded', () => {
-  setPlayerCount(2); // por defecto 2 jugadores
+  setPlayerCount(2); // mínimo y default: 2 jugadores
 });
 
 // Responsive: redibujar si cambia el tamaño
