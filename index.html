@@ -386,7 +386,7 @@
       <div class="setup-label">Círculos en el tablero</div>
       <div class="slider-row">
         <input type="range" id="circleSlider" min="25" max="100" value="35"
-          oninput="onSliderChange(this.value)">
+          oninput="onSliderChange(this.value)" onchange="vibrate(HAPTIC.tap)">
         <div class="slider-val" id="sliderVal">35</div>
       </div>
       <div class="rec-hint" id="recHint"></div>
@@ -479,8 +479,58 @@ let selectedCircle = null;
 
 let canvas, ctx, W, H;
 
+// ── modules/buttons (pwa-template) ──────────────────────────────────────────
+// Mismo vocabulario HAPTIC.* que pwa-template/modules/buttons/vanilla — se
+// inlinea aquí en vez de importarlo porque este proyecto es un único HTML
+// sin módulos ES. Si el módulo cambia en pwa-template, sincronizar a mano.
+const HAPTIC = {
+  tap: 8,
+  select: 12,
+  toggleOn: [10, 30, 10],
+  toggleOff: 10,
+  dismiss: 15,
+  celebrate: [15, 60, 15, 60, 40]
+};
+
+function vibrate(pattern = HAPTIC.tap) {
+  if (navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch { /* ignorar */ }
+  }
+}
+
+// Sonido: solo para el momento de "acierto" real del juego (cerrar un
+// triángulo), no para cada tap — ver criterio en modules/buttons/README.md.
+let audioCtx = null;
+function getAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!audioCtx) audioCtx = new AudioContextClass();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(ctx, { freq, start, duration, type = 'sine', gain = 0.16 }) {
+  const osc = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gainNode.gain.setValueAtTime(gain, start);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, start + duration);
+  osc.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + duration);
+}
+function playSuccessSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  tone(ctx, { freq: 587.33, start: now, duration: 0.12 }); // D5
+  tone(ctx, { freq: 880, start: now + 0.09, duration: 0.18 }); // A5
+}
+
 // ── Inicio ──────────────────────────────────────────────────────────────────
 function startGame() {
+  vibrate(HAPTIC.celebrate);
   // Leer nombres dinámicos
   players = [];
   for (let i = 0; i < numPlayers; i++) {
@@ -532,6 +582,7 @@ function startGame() {
 }
 
 function confirmNewGame() {
+  vibrate(HAPTIC.tap);
   if (confirm('¿Empezar nuevo juego?')) startGame();
 }
 
@@ -576,6 +627,7 @@ function rollDice() {
     const val = Math.floor(Math.random() * 6) + 1;
     linesLeft  = val;
     diceRolled = true;
+    vibrate(HAPTIC.select);
     updateDiceDisplay(val);
     // Comprobar si hay movimientos disponibles tras tirar
     const active = circlesWithMoves();
@@ -625,6 +677,7 @@ function handleCanvasClick(e) {
 
   if (selectedCircle === null) {
     selectedCircle = hit;
+    vibrate(HAPTIC.tap);
     draw();
     return;
   }
@@ -672,6 +725,14 @@ function handleCanvasClick(e) {
     players[currentPlayer].score++;
   });
   updateScores();
+
+  if (newTris.length > 0) {
+    // Cerrar un triángulo es el "acierto" real del juego — feedback fuerte
+    vibrate(HAPTIC.celebrate);
+    playSuccessSound();
+  } else {
+    vibrate(HAPTIC.select);
+  }
 
   selectedCircle = null;
   draw();
@@ -921,6 +982,7 @@ function advanceTurn() {
 }
 
 function showBlockedMessage(remaining) {
+  vibrate(HAPTIC.dismiss);
   const p = players[currentPlayer];
   const color = PLAYER_COLORS[currentPlayer] || '#fff';
   const el = document.getElementById('turnInfo');
@@ -929,6 +991,7 @@ function showBlockedMessage(remaining) {
 }
 
 function endGame() {
+  vibrate(HAPTIC.celebrate);
   document.getElementById('modalTitle').textContent = '¡Fin del juego!';
   // Tabla de resultados
   const sorted = [...players].map((p,i) => ({...p, idx:i})).sort((a,b) => b.score - a.score);
@@ -1062,11 +1125,13 @@ let randomOrder = false;
 
 function toggleRandom() {
   randomOrder = !randomOrder;
+  vibrate(randomOrder ? HAPTIC.toggleOn : HAPTIC.toggleOff);
   const track = document.getElementById('toggleTrack');
   track.classList.toggle('on', randomOrder);
 }
 
 function setPlayerCount(n) {
+  vibrate(HAPTIC.tap);
   numPlayers = n;
   document.querySelectorAll('.pc-btn').forEach((btn, i) => {
     btn.classList.toggle('active', i+2 === n);  // empieza desde 2
