@@ -22,6 +22,18 @@
     --circle-r: 14;
   }
 
+  [data-theme='light'] {
+    --bg: #f3f4f8;
+    --surface: #ffffff;
+    --border: #dcdfe8;
+    --p1-color: #d9662a;
+    --p2-color: #2f6fd6;
+    --p1-light: rgba(217,102,42,0.15);
+    --p2-light: rgba(47,111,214,0.15);
+    --text: #1a1f2e;
+    --muted: #6b7280;
+  }
+
   body {
     background: var(--bg);
     color: var(--text);
@@ -30,7 +42,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 16px;
+    padding: 16px 16px 72px;
     gap: 16px;
   }
 
@@ -345,6 +357,101 @@
   .toggle-label-text span { font-size: .88rem; font-weight: 600; color: var(--text); }
   .toggle-sub { font-size: .72rem !important; font-weight: 400 !important; color: var(--muted) !important; }
 
+  /* ── Selector de jugadores: píldora deslizante (mismo patrón que el
+     selector de idioma de elige-tu-pan-quiz) ── */
+  .player-count-row {
+    position: relative;
+    display: flex;
+    gap: 8px;
+  }
+  .pc-thumb {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 2px solid var(--p1-color);
+    transition: transform .32s cubic-bezier(.65,0,.35,1), width .32s cubic-bezier(.65,0,.35,1), opacity .15s ease;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .pc-thumb.is-dragging { transition: opacity .15s ease; }
+  .pc-btn {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    color: var(--muted);
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.1rem;
+    padding: 10px 4px;
+    cursor: grab;
+    touch-action: none;
+    text-align: center;
+    transition: color .2s ease;
+  }
+  .pc-btn.is-active { color: var(--p1-color); }
+  .pc-btn.is-origin { background: var(--p2-light); color: var(--p2-color); border-radius: 10px; }
+
+  /* ── Botones flotantes de esquina (tema, info) ── */
+  .corner-btn {
+    position: fixed;
+    bottom: 16px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 40;
+    box-shadow: 0 8px 20px -10px rgba(0,0,0,.35);
+  }
+  .corner-btn.bottom-left { left: 16px; }
+  .corner-btn.bottom-right { right: 16px; }
+  .corner-btn:hover { color: var(--text); border-color: var(--p1-color); }
+
+  /* ── Panel de info ── */
+  .info-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.5);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 50;
+  }
+  .info-overlay.show { display: flex; }
+  .info-sheet {
+    background: var(--surface);
+    border-radius: 22px 22px 0 0;
+    padding: 28px 24px 30px;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+    border-top: 2px solid var(--border);
+  }
+  .info-sheet h3 { font-family: 'Fredoka One', cursive; font-size: 1.2rem; }
+  .info-rows { width: 100%; max-width: 260px; margin: 4px 0; }
+  .info-rows > div {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .9rem;
+  }
+  .info-rows dt { color: var(--muted); }
+  .info-rows dd { margin: 0; font-weight: 700; }
 </style>
 
   <link rel="manifest" href="manifest.json">
@@ -357,7 +464,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.4</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.5</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -367,11 +474,11 @@
     <div class="setup-section">
       <div class="setup-label">Número de jugadores</div>
       <div class="player-count-row" id="pcRow">
-        <div class="pc-btn active" onclick="setPlayerCount(2)">2</div>
-        <div class="pc-btn" onclick="setPlayerCount(3)">3</div>
-        <div class="pc-btn" onclick="setPlayerCount(4)">4</div>
-        <div class="pc-btn" onclick="setPlayerCount(5)">5</div>
-        <div class="pc-btn" onclick="setPlayerCount(6)">6</div>
+        <div class="pc-btn" data-n="2" onclick="pcButtonClick(2)">2</div>
+        <div class="pc-btn" data-n="3" onclick="pcButtonClick(3)">3</div>
+        <div class="pc-btn" data-n="4" onclick="pcButtonClick(4)">4</div>
+        <div class="pc-btn" data-n="5" onclick="pcButtonClick(5)">5</div>
+        <div class="pc-btn" data-n="6" onclick="pcButtonClick(6)">6</div>
       </div>
     </div>
 
@@ -446,6 +553,30 @@
     <h2 id="modalTitle">¡Fin del juego!</h2>
     <p id="modalBody"></p>
     <button class="btn-new" onclick="startGame()">▶ Jugar de nuevo</button>
+  </div>
+</div>
+
+<!-- Tema y info (esquinas, como en elige-tu-pan-quiz) -->
+<button class="corner-btn bottom-left" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Cambiar tema" title="Cambiar tema">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" id="themeIcon">
+    <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+  </svg>
+</button>
+<button class="corner-btn bottom-right" onclick="vibrate(HAPTIC.select); document.getElementById('infoOverlay').classList.add('show')" aria-label="Información de la app" title="Información">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+    <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="2" />
+    <path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+    <circle cx="12" cy="7.5" r="1.2" fill="currentColor" />
+  </svg>
+</button>
+
+<div class="info-overlay" id="infoOverlay" onclick="document.getElementById('infoOverlay').classList.remove('show')">
+  <div class="info-sheet" onclick="event.stopPropagation()">
+    <h3>⬤ Juego de Círculos</h3>
+    <dl class="info-rows">
+      <div><dt>Versión</dt><dd>v2.5</dd></div>
+    </dl>
+    <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
   </div>
 </div>
 
@@ -526,6 +657,154 @@ function playSuccessSound() {
   const now = ctx.currentTime;
   tone(ctx, { freq: 587.33, start: now, duration: 0.12 }); // D5
   tone(ctx, { freq: 880, start: now + 0.09, duration: 0.18 }); // A5
+}
+
+// ── Tema claro/oscuro ────────────────────────────────────────────────────────
+const THEME_KEY = 'juego-circulos-theme';
+
+function getInitialTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch { /* sin storage disponible */ }
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme === 'light' ? '#f3f4f8' : '#1a1f2e');
+  const icon = document.getElementById('themeIcon');
+  if (icon) {
+    icon.innerHTML = theme === 'dark'
+      ? '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />'
+      : '<circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2" /><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></g>';
+  }
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignorar */ }
+}
+
+function toggleTheme() {
+  vibrate(HAPTIC.select);
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+// ── Selector de jugadores: píldora deslizante (mismo patrón que el
+// selector de idioma de elige-tu-pan-quiz, adaptado a JS sin React) ─────────
+const PC_PADDING = 0;      // .player-count-row no tiene padding propio
+const PC_DRAG_THRESHOLD = 6;
+let pcRowEl, pcThumbEl;
+let pcThumb = { x: 0, width: 0, ready: false };
+let pcGesture = { startX: 0, thumbStartX: 0, moved: false, pointerId: null, hoverN: null };
+
+function pcRenderThumb() {
+  pcThumbEl.style.transform = `translateX(${pcThumb.x}px)`;
+  pcThumbEl.style.width = `${pcThumb.width}px`;
+  pcThumbEl.style.opacity = pcThumb.ready ? '1' : '0';
+}
+
+function pcMeasure() {
+  const btn = pcRowEl.querySelector(`.pc-btn[data-n="${numPlayers}"]`);
+  if (!btn) return;
+  const rowBox = pcRowEl.getBoundingClientRect();
+  const btnBox = btn.getBoundingClientRect();
+  pcThumb = { x: btnBox.left - rowBox.left, width: btnBox.width, ready: true };
+  pcRenderThumb();
+}
+
+function pcClosestForCenterX(centerX) {
+  const rowBox = pcRowEl.getBoundingClientRect();
+  let closest = numPlayers, closestDist = Infinity;
+  pcRowEl.querySelectorAll('.pc-btn').forEach((btn) => {
+    const n = parseInt(btn.dataset.n, 10);
+    const box = btn.getBoundingClientRect();
+    const center = box.left - rowBox.left + box.width / 2;
+    const d = Math.abs(center - centerX);
+    if (d < closestDist) { closestDist = d; closest = n; }
+  });
+  return closest;
+}
+
+function pcUpdateButtonClasses(dragging) {
+  pcRowEl.querySelectorAll('.pc-btn').forEach((btn) => {
+    const n = parseInt(btn.dataset.n, 10);
+    btn.classList.remove('is-active', 'is-origin');
+    if (dragging) {
+      if (n === pcGesture.hoverN) btn.classList.add('is-active');
+      else if (n === numPlayers) btn.classList.add('is-origin');
+    } else if (n === numPlayers) {
+      btn.classList.add('is-active');
+    }
+  });
+}
+
+function pcButtonClick(n) {
+  if (pcGesture.moved) return; // ya resuelto como arrastre en pointerup
+  setPlayerCount(n);
+}
+
+function pcPointerDown(e) {
+  pcGesture = { startX: e.clientX, thumbStartX: pcThumb.x, moved: false, pointerId: e.pointerId, hoverN: numPlayers };
+  e.currentTarget.setPointerCapture(e.pointerId);
+}
+
+function pcPointerMove(e) {
+  if (pcGesture.pointerId !== e.pointerId) return;
+  const deltaX = e.clientX - pcGesture.startX;
+  if (!pcGesture.moved && Math.abs(deltaX) < PC_DRAG_THRESHOLD) return;
+
+  if (!pcGesture.moved) {
+    pcGesture.moved = true;
+    pcThumbEl.classList.add('is-dragging');
+  }
+
+  const rowBox = pcRowEl.getBoundingClientRect();
+  const maxX = rowBox.width - pcThumb.width - PC_PADDING;
+  pcThumb.x = Math.max(PC_PADDING, Math.min(pcGesture.thumbStartX + deltaX, maxX));
+  pcRenderThumb();
+
+  const overN = pcClosestForCenterX(pcThumb.x + pcThumb.width / 2);
+  if (overN !== pcGesture.hoverN) {
+    pcGesture.hoverN = overN;
+    vibrate(HAPTIC.tap); // toque al cruzar, mismo criterio que el selector de idioma
+    pcUpdateButtonClasses(true);
+  }
+}
+
+function pcPointerUp(e) {
+  if (pcGesture.pointerId !== e.pointerId) return;
+  if (pcGesture.moved) {
+    pcThumbEl.classList.remove('is-dragging');
+    const closest = pcClosestForCenterX(pcThumb.x + pcThumb.width / 2);
+    if (closest !== numPlayers) setPlayerCount(closest);
+    else { pcMeasure(); pcUpdateButtonClasses(false); }
+  }
+}
+
+function pcPointerCancel(e) {
+  if (pcGesture.pointerId !== e.pointerId) return;
+  pcThumbEl.classList.remove('is-dragging');
+  pcMeasure();
+  pcUpdateButtonClasses(false);
+}
+
+function initPlayerCountSelector() {
+  pcRowEl = document.getElementById('pcRow');
+  pcThumbEl = document.createElement('span');
+  pcThumbEl.className = 'pc-thumb';
+  pcThumbEl.setAttribute('aria-hidden', 'true');
+  pcRowEl.prepend(pcThumbEl);
+
+  pcRowEl.querySelectorAll('.pc-btn').forEach((btn) => {
+    btn.addEventListener('pointerdown', pcPointerDown);
+    btn.addEventListener('pointermove', pcPointerMove);
+    btn.addEventListener('pointerup', pcPointerUp);
+    btn.addEventListener('pointercancel', pcPointerCancel);
+  });
+
+  window.addEventListener('resize', pcMeasure);
+  pcMeasure();
+  pcUpdateButtonClasses(false);
 }
 
 // ── Inicio ──────────────────────────────────────────────────────────────────
@@ -1133,9 +1412,8 @@ function toggleRandom() {
 function setPlayerCount(n) {
   vibrate(HAPTIC.tap);
   numPlayers = n;
-  document.querySelectorAll('.pc-btn').forEach((btn, i) => {
-    btn.classList.toggle('active', i+2 === n);  // empieza desde 2
-  });
+  pcUpdateButtonClasses(false);
+  pcMeasure();
   buildNamesGrid();
   // Sugerir círculos
   const rec = CIRCLE_REC[n];
@@ -1203,6 +1481,8 @@ function buildGameUI() {
 
 // Inicializar setup al cargar
 window.addEventListener('DOMContentLoaded', () => {
+  applyTheme(getInitialTheme());
+  initPlayerCountSelector();
   setPlayerCount(2); // mínimo y default: 2 jugadores
 });
 
