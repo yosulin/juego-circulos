@@ -464,7 +464,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.5</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.7</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -574,7 +574,7 @@
   <div class="info-sheet" onclick="event.stopPropagation()">
     <h3>⬤ Juego de Círculos</h3>
     <dl class="info-rows">
-      <div><dt>Versión</dt><dd>v2.5</dd></div>
+      <div><dt>Versión</dt><dd>v2.7</dd></div>
     </dl>
     <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
   </div>
@@ -687,6 +687,7 @@ function toggleTheme() {
   vibrate(HAPTIC.select);
   const current = document.documentElement.getAttribute('data-theme') || 'dark';
   applyTheme(current === 'dark' ? 'light' : 'dark');
+  if (ctx && circles.length) draw(); // repintar ya, no esperar a la siguiente jugada
 }
 
 // ── Selector de jugadores: píldora deslizante (mismo patrón que el
@@ -1291,6 +1292,15 @@ function endGame() {
 }
 
 // ── Dibujo ────────────────────────────────────────────────────────────────────
+// El canvas se pinta con la API de Canvas, no con CSS — los colores no
+// heredan las variables del tema solos. Este helper elige uno u otro según
+// el tema activo; sin esto, los tonos "blanco translúcido" pensados para
+// fondo oscuro se vuelven invisibles sobre el tablero blanco del tema claro
+// (el bug de "los enlaces posibles desaparecen en claro").
+function canvasColor(darkValue, lightValue) {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? lightValue : darkValue;
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
@@ -1318,7 +1328,7 @@ function draw() {
   // Líneas existentes
   edges.forEach(key => {
     const [i, j] = key.split('-').map(Number);
-    drawLine(circles[i], circles[j], 'rgba(255,255,255,0.18)', 2);
+    drawLine(circles[i], circles[j], canvasColor('rgba(255,255,255,0.18)', 'rgba(26,31,46,0.22)'), 2);
   });
 
   // Línea provisional: desde seleccionado hasta cursor (no implementada — se dibuja abajo)
@@ -1331,7 +1341,7 @@ function draw() {
       if (dist(sc.x, sc.y, c.x, c.y) <= MAX_DIST &&
           !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
           !lineIntersectsAny(selectedCircle, i)) {
-        drawLine(sc, c, 'rgba(255,255,255,0.07)', 1.5);
+        drawLine(sc, c, canvasColor('rgba(255,255,255,0.07)', 'rgba(26,31,46,0.15)'), 1.5);
       }
     });
   }
@@ -1357,18 +1367,18 @@ function draw() {
       ctx.strokeStyle = pc;
       ctx.lineWidth = 3;
     } else if (isAdj && linesLeft > 0) {
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillStyle = canvasColor('rgba(255,255,255,0.12)', 'rgba(26,31,46,0.07)');
+      ctx.strokeStyle = canvasColor('rgba(255,255,255,0.4)', 'rgba(26,31,46,0.4)');
       ctx.lineWidth = 2;
     } else if (isBlocked) {
       // Sin movimientos posibles: muy apagado
-      ctx.fillStyle = '#1e2235';
-      ctx.strokeStyle = '#2a3048';
+      ctx.fillStyle = canvasColor('#1e2235', '#eef0f5');
+      ctx.strokeStyle = canvasColor('#2a3048', '#dde1ea');
       ctx.lineWidth = 1.5;
       ctx.globalAlpha = 0.45;
     } else {
-      ctx.fillStyle = '#2e364a';
-      ctx.strokeStyle = '#4a5370';
+      ctx.fillStyle = canvasColor('#2e364a', '#d7dbe6');
+      ctx.strokeStyle = canvasColor('#4a5370', '#b8bfd0');
       ctx.lineWidth = 2;
     }
     ctx.fill();
