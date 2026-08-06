@@ -174,6 +174,7 @@
     width: 100%;
     height: 100%;
     cursor: crosshair;
+    touch-action: none;
   }
 
   /* ── Botón nuevo juego ── */
@@ -489,7 +490,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.9</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.10</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -600,7 +601,7 @@
   <div class="info-sheet" onclick="event.stopPropagation()">
     <h3>⬤ Juego de Círculos</h3>
     <dl class="info-rows">
-      <div><dt>Versión</dt><dd>v2.9</dd></div>
+      <div><dt>Versión</dt><dd>v2.10</dd></div>
     </dl>
     <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
   </div>
@@ -885,7 +886,10 @@ function startGame() {
   updateTurnInfo();
   draw();
 
-  canvas.onclick = handleCanvasClick;
+  canvas.onpointerdown = handleCanvasPointerDown;
+  canvas.onpointermove = handleCanvasPointerMove;
+  canvas.onpointerup = handleCanvasPointerUp;
+  canvas.onpointercancel = handleCanvasPointerCancel;
 }
 
 function confirmNewGame() {
@@ -969,54 +973,114 @@ function updateDiceDisplay(val) {
 }
 
 // ── Canvas click ──────────────────────────────────────────────────────────────
-function handleCanvasClick(e) {
-  if (!diceRolled || linesLeft <= 0) return;
+// ── Canvas: seleccionar/trazar, por tap o por arrastre ──────────────────────
+// Mismo patrón de "detectar arrastre por umbral de movimiento" que el
+// selector de idioma/jugadores: pointerdown no decide nada por sí solo, el
+// pointerup decide si fue un tap (se comporta exactamente como antes) o un
+// arrastre real (traza la línea directamente al soltar sobre el destino).
+let traceGesture = { pointerId: null, startX: 0, startY: 0, origin: null, moved: false, curX: 0, curY: 0 };
+const TRACE_DRAG_THRESHOLD = 10; // px en coordenadas del tablero, no de pantalla
 
+function boardPoint(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = W / rect.width;
   const scaleY = H / rect.height;
-  const mx = (e.clientX - rect.left) * scaleX;
-  const my = (e.clientY - rect.top)  * scaleY;
+  return { mx: (e.clientX - rect.left) * scaleX, my: (e.clientY - rect.top) * scaleY };
+}
 
-  // ¿Hizo click sobre un círculo?
-  const hit = circles.findIndex(c => dist(mx, my, c.x, c.y) < HIT_R);
-  if (hit === -1) { selectedCircle = null; draw(); return; }
+function hitTestCircle(mx, my) {
+  return circles.findIndex(c => dist(mx, my, c.x, c.y) < HIT_R);
+}
 
-  if (selectedCircle === null) {
-    selectedCircle = hit;
-    vibrate(HAPTIC.tap);
-    draw();
-    return;
+function handleCanvasPointerDown(e) {
+  if (!diceRolled || linesLeft <= 0) return;
+  const { mx, my } = boardPoint(e);
+  const hit = hitTestCircle(mx, my);
+
+  // origin puede ser -1 (empezó en espacio vacío) — se sigue trackeando el
+  // gesto para que soltar ahí mismo deseleccione, igual que el click de
+  // siempre sobre espacio vacío.
+  traceGesture = { pointerId: e.pointerId, startX: mx, startY: my, origin: hit, moved: false, curX: mx, curY: my };
+  canvas.setPointerCapture(e.pointerId);
+}
+
+function handleCanvasPointerMove(e) {
+  if (traceGesture.pointerId !== e.pointerId) return;
+  const { mx, my } = boardPoint(e);
+
+  if (!traceGesture.moved) {
+    if (dist(traceGesture.startX, traceGesture.startY, mx, my) < TRACE_DRAG_THRESHOLD) return;
+    traceGesture.moved = true;
+    if (traceGesture.origin >= 0) selectedCircle = traceGesture.origin;
   }
+  traceGesture.curX = mx;
+  traceGesture.curY = my;
+  if (traceGesture.origin >= 0) draw();
+}
 
-  if (selectedCircle === hit) {
+function handleCanvasPointerUp(e) {
+  if (traceGesture.pointerId !== e.pointerId) return;
+  const { mx, my } = boardPoint(e);
+  const origin = traceGesture.origin;
+  const wasDrag = traceGesture.moved;
+  traceGesture = { pointerId: null, startX: 0, startY: 0, origin: null, moved: false, curX: 0, curY: 0 };
+
+  if (origin === -1) {
+    // Empezó en espacio vacío: deseleccionar, igual que el tap de siempre
+    // sobre espacio vacío.
     selectedCircle = null;
     draw();
     return;
   }
 
-  // Intentar trazar línea
-  const a = Math.min(selectedCircle, hit);
-  const b = Math.max(selectedCircle, hit);
+  if (wasDrag) {
+    const hit = hitTestCircle(mx, my);
+    if (hit === -1 || hit === origin) {
+      // soltó fuera del tablero o volvió al mismo círculo: cancela el
+      // trazo, pero deja el círculo seleccionado para reintentarlo
+      selectedCircle = origin;
+      draw();
+      return;
+    }
+    attemptConnect(origin, hit);
+    return;
+  }
+
+  // No hubo arrastre real (movimiento por debajo del umbral): tap normal,
+  // exactamente el mismo comportamiento de siempre.
+  if (selectedCircle === null) {
+    selectedCircle = origin;
+    vibrate(HAPTIC.tap);
+    draw();
+    return;
+  }
+  if (selectedCircle === origin) {
+    selectedCircle = null;
+    draw();
+    return;
+  }
+  attemptConnect(selectedCircle, origin);
+}
+
+function handleCanvasPointerCancel(e) {
+  if (traceGesture.pointerId !== e.pointerId) return;
+  const origin = traceGesture.origin;
+  traceGesture = { pointerId: null, startX: 0, startY: 0, origin: null, moved: false, curX: 0, curY: 0 };
+  if (origin >= 0) selectedCircle = origin;
+  draw();
+}
+
+function attemptConnect(fromIdx, toIdx) {
+  const a = Math.min(fromIdx, toIdx);
+  const b = Math.max(fromIdx, toIdx);
   const key = `${a}-${b}`;
 
-  if (edges.has(key)) {
-    // ya existe, simplemente seleccionar el nuevo
-    selectedCircle = hit;
-    draw();
-    return;
-  }
-
-  if (dist(circles[a].x, circles[a].y, circles[b].x, circles[b].y) > MAX_DIST) {
-    // no adyacentes
-    selectedCircle = hit;
-    draw();
-    return;
-  }
-
-  // No cruzar aristas existentes ni atravesar triángulos ya cerrados
-  if (lineIntersectsAny(a, b)) {
-    selectedCircle = hit;
+  if (edges.has(key) ||
+      dist(circles[a].x, circles[a].y, circles[b].x, circles[b].y) > MAX_DIST ||
+      lineIntersectsAny(a, b)) {
+    // no se puede conectar con ese destino: lo dejamos seleccionado, igual
+    // que al tocar un destino inválido en el flujo de siempre
+    selectedCircle = toIdx;
     draw();
     return;
   }
@@ -1488,6 +1552,16 @@ function draw() {
     ctx.stroke();
     ctx.globalAlpha = 1; // restaurar siempre
   });
+
+  // Línea "de goma" mientras se arrastra desde el círculo de origen
+  if (traceGesture.moved && traceGesture.origin >= 0) {
+    const origin = circles[traceGesture.origin];
+    const pc = PLAYER_COLORS[currentPlayer] || '#ffffff';
+    ctx.save();
+    ctx.setLineDash([6, 5]);
+    drawLine(origin, { x: traceGesture.curX, y: traceGesture.curY }, pc, 2.5);
+    ctx.restore();
+  }
 }
 
 function drawLine(a, b, color, width) {
