@@ -693,7 +693,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.16';
+const APP_VERSION = 'v2.17';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -1213,7 +1213,8 @@ const MOVE_REASON_TEXT = {
   'too-far': 'Demasiado lejos para conectar',
   'over-circle': 'La línea pasaría sobre otro círculo',
   'crosses-edge': 'Cruza otra línea ya trazada',
-  'crosses-triangle': 'Atraviesa un triángulo cerrado'
+  'crosses-triangle': 'Atraviesa un triángulo cerrado',
+  'traps-circle': 'Dejaría un círculo atrapado dentro'
 };
 
 // Devuelve {valid:true} o {valid:false, reason, message} — usado tanto al
@@ -1230,7 +1231,30 @@ function checkMoveValidity(fromIdx, toIdx) {
   }
   const blockedBy = lineIntersectsAny(a, b, true);
   if (blockedBy) return { valid: false, reason: blockedBy, message: MOVE_REASON_TEXT[blockedBy] };
+
+  // Si esta línea cerraría uno o más triángulos, ninguno de ellos puede
+  // dejar otro círculo atrapado dentro — quedaría inalcanzable para
+  // siempre, porque la regla de arriba ya impide entrar en un triángulo
+  // cerrado. Sin esta comprobación se podía sellar un círculo sin darse
+  // cuenta.
+  for (const tri of findNewTriangles(a, b)) {
+    if (triangleTraps(tri.a, tri.b, tri.c)) {
+      return { valid: false, reason: 'traps-circle', message: MOVE_REASON_TEXT['traps-circle'] };
+    }
+  }
+
   return { valid: true };
+}
+
+function triangleTraps(a, b, c) {
+  const ca = circles[a], cb = circles[b], cc = circles[c];
+  for (let i = 0; i < circles.length; i++) {
+    if (i === a || i === b || i === c) continue;
+    if (pointInTriangle(circles[i].x, circles[i].y, ca.x, ca.y, cb.x, cb.y, cc.x, cc.y)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 let lastInvalidReasonTimer = null;
