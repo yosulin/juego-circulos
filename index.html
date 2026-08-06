@@ -18,7 +18,7 @@
     --p1-light: rgba(244,132,74,0.25);
     --p2-light: rgba(91,156,246,0.25);
     --text: #e8eaf0;
-    --muted: #7a82a0;
+    --muted: #8991af;
     --circle-r: 14;
   }
 
@@ -69,7 +69,9 @@
   /* ── Layout de la partida: apilado en vertical por defecto, dos columnas
      en horizontal (tablero grande a un lado, controles al otro) ── */
   #gameUI {
-    display: grid;
+    display: none; /* .is-active lo activa — nunca lo pongas inline en JS,
+                       un estilo inline gana siempre a esta regla y anulaba
+                       por completo el grid horizontal más abajo */
     gap: 16px;
     width: 100%;
     max-width: 720px;
@@ -77,6 +79,7 @@
     grid-template-columns: 1fr;
     justify-items: center;
   }
+  #gameUI.is-active { display: grid; }
   #gameUI .turn-info { grid-area: turn; }
   #gameUI .canvas-wrap { grid-area: board; }
   #gameUI > .btn-new { grid-area: newgame; align-self: start; }
@@ -152,6 +155,9 @@
     cursor: pointer;
     transition: transform .15s, border-color .15s;
     position: relative;
+    font: inherit;
+    margin: 0;
+    appearance: none;
   }
   .dice:hover { border-color: var(--muted); transform: scale(1.05); }
   .dice.rolling { animation: shake .4s ease; }
@@ -249,9 +255,25 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    position: relative;
   }
   .modal h2 { font-family: 'Fredoka One', cursive; font-size: 2rem; }
   .modal p { color: var(--muted); }
+  .dialog-close-x {
+    position: absolute;
+    top: 10px; right: 10px;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dialog-close-x:hover { background: var(--bg); color: var(--text); }
 
   #installBanner {
     display: none; position: fixed; bottom: 20px; left: 50%;
@@ -306,6 +328,8 @@
     cursor: pointer;
     transition: all .2s;
     text-align: center;
+    margin: 0;
+    appearance: none;
   }
   .pc-btn.active {
     background: var(--surface);
@@ -372,6 +396,21 @@
     gap: 14px;
     cursor: pointer;
     user-select: none;
+  }
+  /* Oculto visualmente pero presente para teclado/lector de pantalla —
+     NUNCA display:none, eso lo sacaría también del árbol de accesibilidad */
+  .sr-toggle-input {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .sr-toggle-input:focus-visible + .toggle-track {
+    outline: 3px solid var(--p2-color);
+    outline-offset: 2px;
   }
   .toggle-track {
     width: 46px; height: 26px;
@@ -528,7 +567,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div id="versionTag" style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.13</div>
+<div id="versionTag" style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;"></div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -537,12 +576,12 @@
     <!-- Número de jugadores -->
     <div class="setup-section">
       <div class="setup-label">Número de jugadores</div>
-      <div class="player-count-row" id="pcRow">
-        <div class="pc-btn" data-n="2" onclick="pcButtonClick(2)">2</div>
-        <div class="pc-btn" data-n="3" onclick="pcButtonClick(3)">3</div>
-        <div class="pc-btn" data-n="4" onclick="pcButtonClick(4)">4</div>
-        <div class="pc-btn" data-n="5" onclick="pcButtonClick(5)">5</div>
-        <div class="pc-btn" data-n="6" onclick="pcButtonClick(6)">6</div>
+      <div class="player-count-row" id="pcRow" role="radiogroup" aria-label="Número de jugadores">
+        <button type="button" class="pc-btn" data-n="2" role="radio" aria-checked="false" onclick="pcButtonClick(2)">2</button>
+        <button type="button" class="pc-btn" data-n="3" role="radio" aria-checked="false" onclick="pcButtonClick(3)">3</button>
+        <button type="button" class="pc-btn" data-n="4" role="radio" aria-checked="false" onclick="pcButtonClick(4)">4</button>
+        <button type="button" class="pc-btn" data-n="5" role="radio" aria-checked="false" onclick="pcButtonClick(5)">5</button>
+        <button type="button" class="pc-btn" data-n="6" role="radio" aria-checked="false" onclick="pcButtonClick(6)">6</button>
       </div>
     </div>
 
@@ -565,8 +604,9 @@
 
     <!-- Orden aleatorio -->
     <div class="setup-section">
-      <label class="toggle-row" onclick="toggleRandom()">
-        <div class="toggle-track" id="toggleTrack">
+      <label class="toggle-row">
+        <input type="checkbox" id="randomToggleInput" class="sr-toggle-input" onchange="toggleRandom()">
+        <div class="toggle-track" id="toggleTrack" aria-hidden="true">
           <div class="toggle-thumb" id="toggleThumb"></div>
         </div>
         <div class="toggle-label-text">
@@ -580,12 +620,12 @@
   <button class="btn-new" onclick="startGame()" style="width:100%;max-width:480px;padding:14px;font-size:1rem;">▶ Empezar</button>
 </div>
 
-<div id="gameUI" style="display:none;width:100%;max-width:720px;display:none;flex-direction:column;align-items:center;gap:16px;">
+<div id="gameUI">
 
   <!-- Tarjetas de jugadores: generadas dinámicamente por buildGameUI() -->
-  <div class="top-panel" id="topPanel" style="flex-wrap:wrap;">
+  <div class="top-panel" id="topPanel">
     <div class="dice-area">
-      <div class="dice" id="dice" onclick="rollDice()">
+      <button type="button" class="dice" id="dice" onclick="rollDice()" aria-label="Tirar el dado">
         <div class="dot" id="d1"></div>
         <div class="dot" id="d2"></div>
         <div class="dot" id="d3"></div>
@@ -595,7 +635,7 @@
         <div class="dot" id="d7"></div>
         <div class="dot" id="d8"></div>
         <div class="dot" id="d9"></div>
-      </div>
+      </button>
       <div class="dice-label">
         <div id="linesLeftLabel" class="lines-left">Tira el dado</div>
       </div>
@@ -612,8 +652,9 @@
 </div>
 
 <!-- Modal -->
-<div class="modal-overlay" id="modalOverlay">
+<div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
   <div class="modal">
+    <button class="dialog-close-x" onclick="closeDialog('modalOverlay')" aria-label="Cerrar">✕</button>
     <h2 id="modalTitle">¡Fin del juego!</h2>
     <p id="modalBody"></p>
     <button class="btn-new" onclick="startGame()">▶ Jugar de nuevo</button>
@@ -627,7 +668,7 @@
     <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
   </svg>
 </button>
-<button class="corner-btn bottom-right" onclick="vibrate(HAPTIC.select); document.getElementById('infoOverlay').classList.add('show')" aria-label="Información de la app" title="Información">
+<button class="corner-btn bottom-right" onclick="vibrate(HAPTIC.select); openDialog('infoOverlay')" aria-label="Información de la app" title="Información">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
     <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="2" />
     <path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -635,18 +676,25 @@
   </svg>
 </button>
 
-<div class="info-overlay" id="infoOverlay" onclick="document.getElementById('infoOverlay').classList.remove('show')">
-  <div class="info-sheet" onclick="event.stopPropagation()">
-    <h3>⬤ Juego de Círculos</h3>
+<div class="info-overlay" id="infoOverlay" role="dialog" aria-modal="true" aria-labelledby="infoTitle" onclick="if (event.target === this) closeDialog('infoOverlay')">
+  <div class="info-sheet">
+    <h3 id="infoTitle">⬤ Juego de Círculos</h3>
     <dl class="info-rows">
-      <div><dt>Versión</dt><dd>v2.13</dd></div>
+      <div><dt>Versión</dt><dd id="infoVersion"></dd></div>
     </dl>
-    <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
+    <button class="btn-new" onclick="closeDialog('infoOverlay')">Cerrar</button>
   </div>
 </div>
 
 <script>
 // ── Constantes ──────────────────────────────────────────────────────────────
+// Única fuente de la versión visible — antes se escribía a mano en tres
+// sitios (aquí, el panel de info, y el CACHE de sw.js) y se desincronizaban
+// entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
+// puede leer esta constante, vive en otro archivo) — al subir de versión,
+// solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
+const APP_VERSION = 'v2.14';
+
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
 let MIN_DIST  = 70;    // distancia mínima entre centros (se recalcula)
@@ -677,6 +725,13 @@ let players = [{name:'J1',initial:'J',score:0,colorIndex:0},{name:'J2',initial:'
 function playerColor(turnIdx) {
   const p = players[turnIdx];
   return p ? PLAYER_COLORS[p.colorIndex] : undefined;
+}
+
+// Se me había colado esta variante (PLAYER_COLORS_LIGHT) en el arreglo
+// anterior de identidad de color — mismo problema, mismo porqué.
+function playerLightColor(turnIdx) {
+  const p = players[turnIdx];
+  return p ? PLAYER_COLORS_LIGHT[p.colorIndex] : 'rgba(255,255,255,0.1)';
 }
 let currentPlayer = 0;
 let linesLeft = 0;     // líneas que puede trazar este turno (tras tirar dado)
@@ -811,6 +866,8 @@ function pcUpdateButtonClasses(dragging) {
     } else if (n === numPlayers) {
       btn.classList.add('is-active');
     }
+    // aria-checked refleja la selección real, no el resaltado de arrastre
+    btn.setAttribute('aria-checked', n === numPlayers ? 'true' : 'false');
   });
 }
 
@@ -899,10 +956,10 @@ function startGame() {
 
   document.getElementById('setupPanel').style.display = 'none';
   const ui = document.getElementById('gameUI');
-  ui.style.display = 'flex';
+  ui.classList.add('is-active');
 
   // Orden aleatorio: mezclar array de jugadores si está activado
-  if (randomOrder) {
+  if (isRandomOrder()) {
     for (let i = players.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [players[i], players[j]] = [players[j], players[i]];
@@ -916,10 +973,9 @@ function startGame() {
   const wrap = canvas.parentElement;
   const sz   = boardSize(wrap);
   wrap.style.width = wrap.style.height = sz + 'px';
-  canvas.width  = sz;
-  canvas.height = sz;
-  W = H = sz;
   ctx = canvas.getContext('2d');
+  applyCanvasSize(sz);
+  W = H = sz;
 
   edges      = new Set();
   triangles  = [];
@@ -962,6 +1018,7 @@ function generateCircles() {
   MAX_DIST = avgDist * 1.45;
 
   circles = [];
+  invalidateActiveCirclesCache();
   const padding = CIRCLE_R + 20;
   let attempts = 0;
   while (circles.length < N_CIRCLES && attempts < 5000) {
@@ -977,29 +1034,30 @@ function generateCircles() {
 }
 
 // ── Dado ─────────────────────────────────────────────────────────────────────
+let isRolling = false;
+
 function rollDice() {
-  if (diceRolled && linesLeft > 0) return; // ya tiró y le quedan líneas
+  if (isRolling || (diceRolled && linesLeft > 0)) return; // ya tiró y le quedan líneas
+  isRolling = true;
   const dice = document.getElementById('dice');
   dice.classList.add('rolling');
+  dice.setAttribute('aria-disabled', 'true');
   setTimeout(() => {
+    isRolling = false;
     dice.classList.remove('rolling');
+    dice.removeAttribute('aria-disabled');
     const val = Math.floor(Math.random() * 6) + 1;
     linesLeft  = val;
     diceRolled = true;
     vibrate(HAPTIC.select);
     updateDiceDisplay(val);
     // Comprobar si hay movimientos disponibles tras tirar
-    const active = circlesWithMoves();
+    const active = computeActiveCircles();
     if (active.size === 0) {
-      if (noMoreMoves()) { endGame(); return; }
-      showBlockedMessage(val);
-      linesLeft = 0;
-      diceRolled = false;
-      updateDiceDisplay(0);
-      setTimeout(() => advanceTurn(), 1800);
-    } else {
-      updateTurnInfo();
+      endGame();
+      return;
     }
+    updateTurnInfo();
     draw();
   }, 420);
 }
@@ -1135,6 +1193,7 @@ function attemptConnect(fromIdx, toIdx) {
 
   // Trazar
   edges.add(key);
+  invalidateActiveCirclesCache();
   linesLeft--;
 
   // Buscar triángulos nuevos
@@ -1159,23 +1218,11 @@ function attemptConnect(fromIdx, toIdx) {
   if (linesLeft === 0) {
     diceRolled = false;
     updateDiceDisplay(0);
-    if (noMoreMoves()) { endGame(); return; }
+    if (computeActiveCircles().size === 0) { endGame(); return; }
     advanceTurn();
   } else {
     // Quedan líneas — ¿hay movimientos válidos?
-    if (noMoreMoves()) { endGame(); return; }
-    const active = circlesWithMoves();
-    if (active.size === 0) {
-      // Bloqueado con líneas sobrantes — pasar turno
-      showBlockedMessage(linesLeft);
-      linesLeft = 0;
-      diceRolled = false;
-      updateDiceDisplay(0);
-      setTimeout(() => {
-        advanceTurn();
-      }, 1800);
-      return;
-    }
+    if (computeActiveCircles().size === 0) { endGame(); return; }
     updateDiceDisplay(null);
     document.getElementById('linesLeftLabel').textContent = `${linesLeft} línea${linesLeft !== 1 ? 's' : ''}`;
     updateTurnInfo();
@@ -1338,21 +1385,73 @@ function findNewTriangles(a, b) {
 }
 
 // ── ¿Quedan movimientos? ──────────────────────────────────────────────────────
-function noMoreMoves() {
-  for (let i = 0; i < circles.length; i++) {
-    for (let j = i+1; j < circles.length; j++) {
-      if (!edges.has(`${i}-${j}`) &&
-          dist(circles[i].x,circles[i].y,circles[j].x,circles[j].y) <= MAX_DIST &&
-          !lineIntersectsAny(i, j)) {
-        return false;
-      }
-    }
-  }
-  return true;
+// Antes había dos funciones (noMoreMoves/circlesWithMoves) que recorrían
+// exactamente el mismo cálculo por separado — y como ahora draw() se llama
+// en cada pointermove mientras arrastras una línea, ese recálculo O(n²)
+// completo se repetía decenas de veces por segundo sin que cambiara nada.
+// Una sola función, cacheada, y solo se invalida cuando de verdad cambia
+// algo (se traza una línea, o se genera un tablero nuevo).
+let activeCirclesCache = null;
+
+// ── Diálogos accesibles ──────────────────────────────────────────────────
+// Escape cierra, el foco entra al abrir y vuelve a quien lo abrió al
+// cerrar, y Tab se queda atrapado dentro mientras el diálogo está abierto.
+let lastFocusedBeforeDialog = null;
+
+function focusableIn(overlay) {
+  return Array.from(
+    overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+  );
 }
 
-// Devuelve Set de índices de círculos que tienen al menos una conexión válida posible
-function circlesWithMoves() {
+function openDialog(overlayId) {
+  const overlay = document.getElementById(overlayId);
+  lastFocusedBeforeDialog = document.activeElement;
+  overlay.classList.add('show');
+  const focusable = focusableIn(overlay);
+  if (focusable.length) focusable[0].focus();
+}
+
+function closeDialog(overlayId) {
+  const overlay = document.getElementById(overlayId);
+  overlay.classList.remove('show');
+  if (lastFocusedBeforeDialog && document.contains(lastFocusedBeforeDialog)) {
+    lastFocusedBeforeDialog.focus();
+  }
+  lastFocusedBeforeDialog = null;
+}
+
+document.addEventListener('keydown', (e) => {
+  ['modalOverlay', 'infoOverlay'].forEach((id) => {
+    const overlay = document.getElementById(id);
+    if (!overlay || !overlay.classList.contains('show')) return;
+
+    if (e.key === 'Escape') {
+      closeDialog(id);
+      return;
+    }
+    if (e.key === 'Tab') {
+      const focusable = focusableIn(overlay);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+});
+
+function invalidateActiveCirclesCache() {
+  activeCirclesCache = null;
+}
+
+function computeActiveCircles() {
+  if (activeCirclesCache !== null) return activeCirclesCache;
   const active = new Set();
   for (let i = 0; i < circles.length; i++) {
     for (let j = i+1; j < circles.length; j++) {
@@ -1364,6 +1463,7 @@ function circlesWithMoves() {
       }
     }
   }
+  activeCirclesCache = active;
   return active;
 }
 
@@ -1430,7 +1530,7 @@ function endGame() {
     body += `🏆 ¡Gana <strong style="color:${playerColor(winners[0].idx)}">${escapeHtml(winners[0].name)}</strong>!`;
   }
   document.getElementById('modalBody').innerHTML = body;
-  document.getElementById('modalOverlay').classList.add('show');
+  openDialog('modalOverlay');
 
   lastResultText = buildShareText(sorted, resultLine);
   launchConfetti(winners.length === 1 ? playerColor(winners[0].idx) : null);
@@ -1531,6 +1631,19 @@ function boardSize(wrap) {
   return Math.round(Math.min(naturalWidth, availableHeight, 960));
 }
 
+// El canvas por defecto tiene el mismo número de píxeles de buffer que su
+// tamaño en CSS — en una pantalla con devicePixelRatio 2 o 3 (la mayoría de
+// móviles), eso se ve borroso. Se guarda W/H como coordenadas LÓGICAS (sin
+// tocar el resto del juego, que sigue razonando en esas coordenadas) y se
+// escala solo el buffer real + una transformación, para que se vea nítido
+// sin cambiar ninguna otra cuenta geométrica.
+function applyCanvasSize(sz) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(sz * dpr);
+  canvas.height = Math.round(sz * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
@@ -1542,7 +1655,7 @@ function draw() {
     ctx.lineTo(cb.x, cb.y);
     ctx.lineTo(cc.x, cc.y);
     ctx.closePath();
-    ctx.fillStyle = PLAYER_COLORS_LIGHT[t.owner] || 'rgba(255,255,255,0.1)';
+    ctx.fillStyle = playerLightColor(t.owner) || 'rgba(255,255,255,0.1)';
     ctx.fill();
 
     // Inicial del jugador centrada
@@ -1577,7 +1690,7 @@ function draw() {
   }
 
   // Calcular círculos con movimientos válidos (para apagar los bloqueados)
-  const activeCircles = diceRolled ? circlesWithMoves() : null;
+  const activeCircles = diceRolled ? computeActiveCircles() : null;
 
   // Círculos
   circles.forEach((c, i) => {
@@ -1650,13 +1763,17 @@ const PLAYER_COLORS_LIGHT = ["rgba(244,132,74,0.22)", "rgba(91,156,246,0.22)", "
 const CIRCLE_REC = {1:25, 2:35, 3:50, 4:65, 5:80, 6:100};
 
 let numPlayers = 2;
-let randomOrder = false;
+// randomOrder ya no es una variable aparte — se lee directamente del
+// checkbox (única fuente de verdad, no puede desincronizarse del estado
+// visual real que ve/toca la persona).
+function isRandomOrder() {
+  return document.getElementById('randomToggleInput').checked;
+}
 
 function toggleRandom() {
-  randomOrder = !randomOrder;
-  vibrate(randomOrder ? HAPTIC.toggleOn : HAPTIC.toggleOff);
-  const track = document.getElementById('toggleTrack');
-  track.classList.toggle('on', randomOrder);
+  const on = isRandomOrder();
+  vibrate(on ? HAPTIC.toggleOn : HAPTIC.toggleOff);
+  document.getElementById('toggleTrack').classList.toggle('on', on);
 }
 
 function setPlayerCount(n) {
@@ -1731,6 +1848,8 @@ function buildGameUI() {
 
 // Inicializar setup al cargar
 window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('versionTag').textContent = APP_VERSION;
+  document.getElementById('infoVersion').textContent = APP_VERSION;
   applyTheme(getInitialTheme());
   initPlayerCountSelector();
   setPlayerCount(2); // mínimo y default: 2 jugadores
@@ -1753,7 +1872,9 @@ function handleBoardResize() {
   MAX_DIST *= scale;
   CIRCLE_R *= scale;
   HIT_R    *= scale;
-  canvas.width = canvas.height = W = H = sz;
+  invalidateActiveCirclesCache();
+  applyCanvasSize(sz);
+  W = H = sz;
   draw();
 }
 window.addEventListener('resize', handleBoardResize);
