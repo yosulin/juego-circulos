@@ -63,6 +63,44 @@
     flex-wrap: nowrap;   /* SIEMPRE en una fila */
     width: 100%;
     max-width: 720px;
+    grid-area: players;
+  }
+
+  /* ── Layout de la partida: apilado en vertical por defecto, dos columnas
+     en horizontal (tablero grande a un lado, controles al otro) ── */
+  #gameUI {
+    display: grid;
+    gap: 16px;
+    width: 100%;
+    max-width: 720px;
+    grid-template-areas: "players" "turn" "board" "newgame";
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  #gameUI .turn-info { grid-area: turn; }
+  #gameUI .canvas-wrap { grid-area: board; }
+  #gameUI > .btn-new { grid-area: newgame; align-self: start; }
+
+  @media (orientation: landscape) and (min-width: 640px) {
+    #gameUI {
+      max-width: 1100px;
+      grid-template-columns: 1fr 260px;
+      grid-template-areas:
+        "board players"
+        "board turn"
+        "board newgame";
+      align-items: start;
+    }
+    #gameUI .canvas-wrap { max-width: none; justify-self: center; }
+    #gameUI .top-panel,
+    #gameUI .turn-info,
+    #gameUI > .btn-new { max-width: none; width: 100%; }
+    #gameUI .top-panel { flex-direction: column; }
+
+    /* Menos aire arriba para dejarle más alto al tablero */
+    h1 { font-size: 1.4rem; margin-bottom: 0; }
+    body > #versionTag { display: none; }
+    body { padding-top: 8px; gap: 8px; }
   }
 
   .player-card {
@@ -164,7 +202,7 @@
     border-radius: 20px;
     overflow: hidden;
     width: 100%;
-    max-width: 860px;
+    max-width: 960px;
     aspect-ratio: 1;
     position: relative;
   }
@@ -490,7 +528,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.10</div>
+<div id="versionTag" style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.11</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -601,7 +639,7 @@
   <div class="info-sheet" onclick="event.stopPropagation()">
     <h3>⬤ Juego de Círculos</h3>
     <dl class="info-rows">
-      <div><dt>Versión</dt><dd>v2.10</dd></div>
+      <div><dt>Versión</dt><dd>v2.11</dd></div>
     </dl>
     <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
   </div>
@@ -1464,8 +1502,9 @@ function boardSize(wrap) {
   wrap.style.width = '';
   wrap.style.height = ''; // vuelve al 100% natural del CSS antes de medir
   const naturalWidth = wrap.clientWidth;
-  const availableHeight = window.innerHeight * 0.6;
-  return Math.round(Math.min(naturalWidth, availableHeight, 860));
+  const isLandscapeLayout = window.matchMedia('(orientation: landscape) and (min-width: 640px)').matches;
+  const availableHeight = window.innerHeight * (isLandscapeLayout ? 0.86 : 0.68);
+  return Math.round(Math.min(naturalWidth, availableHeight, 960));
 }
 
 function draw() {
@@ -1674,7 +1713,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // Responsive: redibujar si cambia el tamaño
-window.addEventListener('resize', () => {
+function handleBoardResize() {
   if (!canvas) return;
   const wrap = canvas.parentElement;
   const sz   = boardSize(wrap);
@@ -1684,7 +1723,13 @@ window.addEventListener('resize', () => {
   circles.forEach(c => { c.x *= scale; c.y *= scale; });
   canvas.width = canvas.height = W = H = sz;
   draw();
-});
+}
+window.addEventListener('resize', handleBoardResize);
+// Algunos navegadores móviles no disparan 'resize' de forma fiable al girar
+// el dispositivo — 'orientationchange' es más consistente ahí. Un pequeño
+// retraso porque innerHeight/innerWidth tardan un momento en actualizarse
+// tras el giro en algunos navegadores.
+window.addEventListener('orientationchange', () => setTimeout(handleBoardResize, 150));
 </script>
 
 <div id="installBanner">
