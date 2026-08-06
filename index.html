@@ -693,7 +693,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.15';
+const APP_VERSION = 'v2.16';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -1030,6 +1030,28 @@ function generateCircles() {
       if (dist(x, y, c.x, c.y) < MIN_DIST) { valid = false; break; }
     }
     if (valid) circles.push({x, y});
+  }
+
+  // MAX_DIST recalculado con datos reales, no con la media teórica de
+  // antes: para cada círculo, su distancia al vecino más cercano; nos
+  // quedamos con la peor de esas distancias (el círculo más aislado) y
+  // le damos margen. Así garantizamos que TODO círculo tenga al menos un
+  // vecino alcanzable, sin que un solo caso raro (un círculo que cayó en
+  // una zona muy despejada) dispare el límite para el tablero entero —
+  // que sí pasaría si tomáramos la distancia máxima entre cualquier
+  // pareja, en vez de "la distancia a tu vecino más próximo".
+  let worstNearestNeighbor = 0;
+  for (let i = 0; i < circles.length; i++) {
+    let nearest = Infinity;
+    for (let j = 0; j < circles.length; j++) {
+      if (i === j) continue;
+      const d = dist(circles[i].x, circles[i].y, circles[j].x, circles[j].y);
+      if (d < nearest) nearest = d;
+    }
+    if (nearest < Infinity && nearest > worstNearestNeighbor) worstNearestNeighbor = nearest;
+  }
+  if (worstNearestNeighbor > 0) {
+    MAX_DIST = Math.max(MAX_DIST, worstNearestNeighbor * 1.4);
   }
 }
 
