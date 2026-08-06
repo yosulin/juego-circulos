@@ -117,13 +117,6 @@
   }
   .dice:hover { border-color: var(--muted); transform: scale(1.05); }
   .dice.rolling { animation: shake .4s ease; }
-  .dice.settling { animation: dice-settle .28s ease; }
-
-  @keyframes dice-settle {
-    0% { transform: scale(1.22); }
-    60% { transform: scale(0.94); }
-    100% { transform: scale(1); }
-  }
 
   @keyframes shake {
     0%,100% { transform: rotate(0deg) scale(1); }
@@ -496,7 +489,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.8</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.9</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -607,7 +600,7 @@
   <div class="info-sheet" onclick="event.stopPropagation()">
     <h3>⬤ Juego de Círculos</h3>
     <dl class="info-rows">
-      <div><dt>Versión</dt><dd>v2.8</dd></div>
+      <div><dt>Versión</dt><dd>v2.9</dd></div>
     </dl>
     <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
   </div>
@@ -936,22 +929,8 @@ function rollDice() {
   if (diceRolled && linesLeft > 0) return; // ya tiró y le quedan líneas
   const dice = document.getElementById('dice');
   dice.classList.add('rolling');
-
-  // Enseñar caras al azar mientras "rueda", no solo agitar el icono con la
-  // cara anterior quieta — se siente mucho más a dado de verdad.
-  let ticks = 0;
-  const flicker = setInterval(() => {
-    updateDiceDisplay(Math.floor(Math.random() * 6) + 1);
-    ticks++;
-    if (ticks % 2 === 0) vibrate(HAPTIC.tap);
-  }, 60);
-
   setTimeout(() => {
-    clearInterval(flicker);
     dice.classList.remove('rolling');
-    dice.classList.add('settling');
-    setTimeout(() => dice.classList.remove('settling'), 300);
-
     const val = Math.floor(Math.random() * 6) + 1;
     linesLeft  = val;
     diceRolled = true;
