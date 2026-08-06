@@ -528,7 +528,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div id="versionTag" style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.12</div>
+<div id="versionTag" style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.13</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -639,7 +639,7 @@
   <div class="info-sheet" onclick="event.stopPropagation()">
     <h3>⬤ Juego de Círculos</h3>
     <dl class="info-rows">
-      <div><dt>Versión</dt><dd>v2.12</dd></div>
+      <div><dt>Versión</dt><dd>v2.13</dd></div>
     </dl>
     <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
   </div>
@@ -667,7 +667,17 @@ const DICE_DOTS = {
 let circles = [];      // {x,y}
 let edges   = new Set(); // "i-j" (i<j)
 let triangles= [];     // {a,b,c,owner}
-let players = [{name:'J1',initial:'J',score:0},{name:'J2',initial:'J',score:0}];
+let players = [{name:'J1',initial:'J',score:0,colorIndex:0},{name:'J2',initial:'J',score:0,colorIndex:1}];
+
+// El color de un jugador es su identidad (colorIndex, fijado al escribir su
+// nombre) — NO su posición actual en el array, que cambia si el orden de
+// turno se sortea. Usar el índice de turno directamente aquí es el bug que
+// hacía que el color visto al escribir el nombre no coincidiera con el
+// color mostrado ya jugando, si "orden aleatorio" estaba activado.
+function playerColor(turnIdx) {
+  const p = players[turnIdx];
+  return p ? PLAYER_COLORS[p.colorIndex] : undefined;
+}
 let currentPlayer = 0;
 let linesLeft = 0;     // líneas que puede trazar este turno (tras tirar dado)
 let diceRolled = false;
@@ -882,7 +892,7 @@ function startGame() {
     const el = document.getElementById(`nameInput${i}`);
     const raw = el ? el.value.trim() : '';
     const name = raw || `Jugador ${i+1}`;
-    players.push({name, initial: name[0].toUpperCase(), score: 0});
+    players.push({name, initial: name[0].toUpperCase(), score: 0, colorIndex: i});
   }
   // Leer número de círculos del slider
   N_CIRCLES = parseInt(document.getElementById('circleSlider').value) || 35;
@@ -1374,12 +1384,12 @@ function updateActiveCards() {
 
 function updateTurnInfo() {
   const p = players[currentPlayer];
-  const color = PLAYER_COLORS[currentPlayer] || 'var(--p1-color)';
+  const color = playerColor(currentPlayer) || 'var(--p1-color)';
   const el = document.getElementById('turnInfo');
   if (!diceRolled) {
-    el.innerHTML = `Turno de <span style="color:${color}">${p.name}</span> — tira el dado`;
+    el.innerHTML = `Turno de <span style="color:${color}">${escapeHtml(p.name)}</span> — tira el dado`;
   } else {
-    el.innerHTML = `<span style="color:${color}">${p.name}</span> — traza ${linesLeft} línea${linesLeft!==1?'s':''} más`;
+    el.innerHTML = `<span style="color:${color}">${escapeHtml(p.name)}</span> — traza ${linesLeft} línea${linesLeft!==1?'s':''} más`;
   }
 }
 
@@ -1393,9 +1403,9 @@ function advanceTurn() {
 function showBlockedMessage(remaining) {
   vibrate(HAPTIC.dismiss);
   const p = players[currentPlayer];
-  const color = PLAYER_COLORS[currentPlayer] || '#fff';
+  const color = playerColor(currentPlayer) || '#fff';
   const el = document.getElementById('turnInfo');
-  el.innerHTML = `<span style="color:${color}">${p.name}</span> — sin movimientos posibles, pierde ${remaining} línea${remaining !== 1 ? 's' : ''}`;
+  el.innerHTML = `<span style="color:${color}">${escapeHtml(p.name)}</span> — sin movimientos posibles, pierde ${remaining} línea${remaining !== 1 ? 's' : ''}`;
   selectedCircle = null;
 }
 
@@ -1405,8 +1415,8 @@ function endGame() {
   // Tabla de resultados
   const sorted = [...players].map((p,i) => ({...p, idx:i})).sort((a,b) => b.score - a.score);
   let body = sorted.map(p => {
-    const color = PLAYER_COLORS[p.idx];
-    return `<span style="color:${color};font-weight:700">${p.name}</span>: ${p.score} triángulo${p.score!==1?'s':''}`;
+    const color = playerColor(p.idx);
+    return `<span style="color:${color};font-weight:700">${escapeHtml(p.name)}</span>: ${p.score} triángulo${p.score!==1?'s':''}`;
   }).join('&nbsp; · &nbsp;');
   body += '<br><br>';
   const maxScore = sorted[0].score;
@@ -1414,16 +1424,16 @@ function endGame() {
   let resultLine;
   if (winners.length > 1) {
     resultLine = `🤝 ¡Empate entre ${winners.map(p=>p.name).join(' y ')}!`;
-    body += `🤝 ¡Empate entre ${winners.map(p=>`<strong>${p.name}</strong>`).join(' y ')}!`;
+    body += `🤝 ¡Empate entre ${winners.map(p=>`<strong>${escapeHtml(p.name)}</strong>`).join(' y ')}!`;
   } else {
     resultLine = `🏆 ¡Gana ${winners[0].name}!`;
-    body += `🏆 ¡Gana <strong style="color:${PLAYER_COLORS[winners[0].idx]}">${winners[0].name}</strong>!`;
+    body += `🏆 ¡Gana <strong style="color:${playerColor(winners[0].idx)}">${escapeHtml(winners[0].name)}</strong>!`;
   }
   document.getElementById('modalBody').innerHTML = body;
   document.getElementById('modalOverlay').classList.add('show');
 
   lastResultText = buildShareText(sorted, resultLine);
-  launchConfetti(winners.length === 1 ? PLAYER_COLORS[winners[0].idx] : null);
+  launchConfetti(winners.length === 1 ? playerColor(winners[0].idx) : null);
 }
 
 let lastResultText = '';
@@ -1493,6 +1503,20 @@ function canvasColor(darkValue, lightValue) {
   return document.documentElement.getAttribute('data-theme') === 'light' ? lightValue : darkValue;
 }
 
+// Los nombres de jugador los escribe la propia persona jugando — sin
+// escapar esto, un nombre como "<img src=x onerror=...>" se ejecutaría en
+// la pantalla de cualquiera que esté mirando la partida. Mismo patrón que
+// en pwa-template/core/escapeHtml.js.
+function escapeHtml(value) {
+  if (value == null) return '';
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 // ── Tamaño del tablero ───────────────────────────────────────────────────────
 // No solo el ancho disponible: en móviles altos y estrechos, el ancho suele
 // ser el factor limitante aunque sobre alto de pantalla. Usar también el
@@ -1525,7 +1549,7 @@ function draw() {
     const cx = (ca.x + cb.x + cc.x) / 3;
     const cy = (ca.y + cb.y + cc.y) / 3;
     ctx.font = 'bold 14px Nunito, sans-serif';
-    ctx.fillStyle = PLAYER_COLORS[t.owner] || '#ffffff';
+    ctx.fillStyle = playerColor(t.owner) || '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(players[t.owner].initial, cx, cy);
@@ -1568,7 +1592,7 @@ function draw() {
     ctx.arc(c.x, c.y, CIRCLE_R, 0, Math.PI * 2);
 
     if (isSelected) {
-      const pc = PLAYER_COLORS[currentPlayer] || '#ffffff';
+      const pc = playerColor(currentPlayer) || '#ffffff';
       ctx.fillStyle = pc + '80';
       ctx.strokeStyle = pc;
       ctx.lineWidth = 3;
@@ -1595,7 +1619,7 @@ function draw() {
   // Línea "de goma" mientras se arrastra desde el círculo de origen
   if (traceGesture.moved && traceGesture.origin >= 0) {
     const origin = circles[traceGesture.origin];
-    const pc = PLAYER_COLORS[currentPlayer] || '#ffffff';
+    const pc = playerColor(currentPlayer) || '#ffffff';
     ctx.save();
     ctx.setLineDash([6, 5]);
     drawLine(origin, { x: traceGesture.curX, y: traceGesture.curY }, pc, 2.5);
@@ -1689,14 +1713,14 @@ function buildGameUI() {
   // Insertar tarjetas: mitad antes del dado, mitad después (o todas antes si 1-3)
   const half = Math.ceil(players.length / 2);
   players.forEach((p, i) => {
-    const color = PLAYER_COLORS[i];
-    const pClass = i === 0 ? 'p1' : i === 1 ? 'p2' : '';
+    const color = PLAYER_COLORS[p.colorIndex];
+    const pClass = p.colorIndex === 0 ? 'p1' : p.colorIndex === 1 ? 'p2' : '';
     const card = document.createElement('div');
     card.className = `player-card`;
     card.id = `card${i+1}`;
     card.style.cssText = `color:${color};border-color:var(--border);`;
     card.innerHTML = `
-      <span class="player-name" id="label${i+1}">${p.name.toUpperCase()}</span>
+      <span class="player-name" id="label${i+1}">${escapeHtml(p.name.toUpperCase())}</span>
       <span class="player-score" id="score${i+1}">0</span>
       <span class="player-initial" id="init${i+1}">${p.initial}</span>`;
     if (i === half) panel.appendChild(diceArea);
@@ -1714,13 +1738,21 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Responsive: redibujar si cambia el tamaño
 function handleBoardResize() {
-  if (!canvas) return;
+  if (!canvas || !circles.length) return;
   const wrap = canvas.parentElement;
   const sz   = boardSize(wrap);
   wrap.style.width = wrap.style.height = sz + 'px';
-  // Reescalar posiciones
+  // Reescalar posiciones Y también los umbrales geométricos que dependían
+  // del tamaño del tablero al generarlo (MIN_DIST/MAX_DIST/CIRCLE_R/HIT_R).
+  // Sin esto, tras rotar o redimensionar, la relación "quién es adyacente
+  // a quién" deja de coincidir con lo que se ve en pantalla — círculos que
+  // se veían cerca podían dejar de ser conectables, o al revés.
   const scale = sz / W;
   circles.forEach(c => { c.x *= scale; c.y *= scale; });
+  MIN_DIST *= scale;
+  MAX_DIST *= scale;
+  CIRCLE_R *= scale;
+  HIT_R    *= scale;
   canvas.width = canvas.height = W = H = sz;
   draw();
 }

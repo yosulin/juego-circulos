@@ -1,4 +1,4 @@
-const CACHE = 'juego-circulos-v2.12';
+const CACHE = 'juego-circulos-v2.13';
 const ASSETS = [
   '/juego-circulos/',
   '/juego-circulos/index.html',
@@ -13,9 +13,16 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  // Borrar TODAS las cachés antiguas al activar la nueva versión
+  // Borrar SOLO las cachés antiguas de esta app, no todo el origen — Cache
+  // Storage se comparte entre TODO lo que vive bajo yosulin.github.io
+  // (el quiz, las rutas, los viajes...), no está aislado por proyecto.
+  // Filtrar por "!== CACHE" en vez de por prefijo propio borraría las
+  // cachés de esos otros proyectos si el navegador los ha visitado.
+  const CACHE_PREFIX = 'juego-circulos-';
   e.waitUntil(caches.keys().then(keys =>
-    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    Promise.all(
+      keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE).map(k => caches.delete(k))
+    )
   ));
   self.clients.claim();
 });
