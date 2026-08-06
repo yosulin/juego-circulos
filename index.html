@@ -693,7 +693,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.14';
+const APP_VERSION = 'v2.15';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -1084,7 +1084,7 @@ function updateDiceDisplay(val) {
 // selector de idioma/jugadores: pointerdown no decide nada por sí solo, el
 // pointerup decide si fue un tap (se comporta exactamente como antes) o un
 // arrastre real (traza la línea directamente al soltar sobre el destino).
-let traceGesture = { pointerId: null, startX: 0, startY: 0, origin: null, moved: false, curX: 0, curY: 0 };
+let traceGesture = { pointerId: null, startX: 0, startY: 0, origin: null, moved: false, curX: 0, curY: 0, hoverTarget: null, hoverValid: null };
 const TRACE_DRAG_THRESHOLD = 10; // px en coordenadas del tablero, no de pantalla
 
 function boardPoint(e) {
@@ -1106,7 +1106,7 @@ function handleCanvasPointerDown(e) {
   // origin puede ser -1 (empezó en espacio vacío) — se sigue trackeando el
   // gesto para que soltar ahí mismo deseleccione, igual que el click de
   // siempre sobre espacio vacío.
-  traceGesture = { pointerId: e.pointerId, startX: mx, startY: my, origin: hit, moved: false, curX: mx, curY: my };
+  traceGesture = { pointerId: e.pointerId, startX: mx, startY: my, origin: hit, moved: false, curX: mx, curY: my, hoverTarget: null, hoverValid: null };
   canvas.setPointerCapture(e.pointerId);
 }
 
@@ -1121,7 +1121,17 @@ function handleCanvasPointerMove(e) {
   }
   traceGesture.curX = mx;
   traceGesture.curY = my;
-  if (traceGesture.origin >= 0) draw();
+
+  if (traceGesture.origin >= 0) {
+    const hoverTarget = hitTestCircle(mx, my);
+    if (hoverTarget !== traceGesture.hoverTarget) {
+      traceGesture.hoverTarget = hoverTarget;
+      traceGesture.hoverValid = (hoverTarget === -1 || hoverTarget === traceGesture.origin)
+        ? null // sin objetivo claro todavía — no colorear de rojo/verde
+        : checkMoveValidity(traceGesture.origin, hoverTarget).valid;
+    }
+    draw();
+  }
 }
 
 function handleCanvasPointerUp(e) {
@@ -1176,20 +1186,62 @@ function handleCanvasPointerCancel(e) {
   draw();
 }
 
-function attemptConnect(fromIdx, toIdx) {
+const MOVE_REASON_TEXT = {
+  'edge-exists': 'Esas dos ya están conectadas',
+  'too-far': 'Demasiado lejos para conectar',
+  'over-circle': 'La línea pasaría sobre otro círculo',
+  'crosses-edge': 'Cruza otra línea ya trazada',
+  'crosses-triangle': 'Atraviesa un triángulo cerrado'
+};
+
+// Devuelve {valid:true} o {valid:false, reason, message} — usado tanto al
+// soltar una conexión como en vivo durante el arrastre, para explicar POR
+// QUÉ algo no es válido en vez de simplemente no hacer nada.
+function checkMoveValidity(fromIdx, toIdx) {
   const a = Math.min(fromIdx, toIdx);
   const b = Math.max(fromIdx, toIdx);
   const key = `${a}-${b}`;
 
-  if (edges.has(key) ||
-      dist(circles[a].x, circles[a].y, circles[b].x, circles[b].y) > MAX_DIST ||
-      lineIntersectsAny(a, b)) {
+  if (edges.has(key)) return { valid: false, reason: 'edge-exists', message: MOVE_REASON_TEXT['edge-exists'] };
+  if (dist(circles[a].x, circles[a].y, circles[b].x, circles[b].y) > MAX_DIST) {
+    return { valid: false, reason: 'too-far', message: MOVE_REASON_TEXT['too-far'] };
+  }
+  const blockedBy = lineIntersectsAny(a, b, true);
+  if (blockedBy) return { valid: false, reason: blockedBy, message: MOVE_REASON_TEXT[blockedBy] };
+  return { valid: true };
+}
+
+let lastInvalidReasonTimer = null;
+
+function showInvalidMoveReason(message) {
+  const el = document.getElementById('turnInfo');
+  const original = el.dataset.originalHtml ?? el.innerHTML;
+  el.dataset.originalHtml = original;
+  el.innerHTML = `<span style="color:var(--p1-color)">⚠ ${escapeHtml(message)}</span>`;
+  clearTimeout(lastInvalidReasonTimer);
+  lastInvalidReasonTimer = setTimeout(() => {
+    el.innerHTML = el.dataset.originalHtml;
+    delete el.dataset.originalHtml;
+  }, 1400);
+}
+
+function attemptConnect(fromIdx, toIdx) {
+  const check = checkMoveValidity(fromIdx, toIdx);
+
+  if (!check.valid) {
     // no se puede conectar con ese destino: lo dejamos seleccionado, igual
-    // que al tocar un destino inválido en el flujo de siempre
+    // que al tocar un destino inválido en el flujo de siempre — pero ahora
+    // además se explica por qué, en vez de simplemente no pasar nada
+    vibrate(HAPTIC.dismiss);
+    showInvalidMoveReason(check.message);
     selectedCircle = toIdx;
     draw();
     return;
   }
+
+  const a = Math.min(fromIdx, toIdx);
+  const b = Math.max(fromIdx, toIdx);
+  const key = `${a}-${b}`;
 
   // Trazar
   edges.add(key);
@@ -1291,7 +1343,7 @@ function pointToSegmentDist(px, py, ax, ay, bx, by) {
 }
 
 // ¿El segmento a-b cruza alguna arista existente o atraviesa algún triángulo cerrado?
-function lineIntersectsAny(idxA, idxB) {
+function lineIntersectsAny(idxA, idxB, withReason) {
   const ax = circles[idxA].x, ay = circles[idxA].y;
   const bx = circles[idxB].x, by = circles[idxB].y;
 
@@ -1309,7 +1361,7 @@ function lineIntersectsAny(idxA, idxB) {
     // Solo bloqueamos si la proyección cae ENTRE los extremos (t en 0.05..0.95)
     if (t > 0.05 && t < 0.95) {
       const distSq = Math.pow(ck.x - (ax + t*dx), 2) + Math.pow(ck.y - (ay + t*dy), 2);
-      if (distSq < (CIRCLE_R * CIRCLE_R)) return true;
+      if (distSq < (CIRCLE_R * CIRCLE_R)) return withReason ? 'over-circle' : true;
     }
   }
 
@@ -1319,7 +1371,7 @@ function lineIntersectsAny(idxA, idxB) {
     if (i === idxA || i === idxB || j === idxA || j === idxB) continue;
     const cx = circles[i].x, cy = circles[i].y;
     const dx = circles[j].x, dy = circles[j].y;
-    if (segmentsIntersect(ax,ay,bx,by, cx,cy,dx,dy)) return true;
+    if (segmentsIntersect(ax,ay,bx,by, cx,cy,dx,dy)) return withReason ? 'crosses-edge' : true;
   }
 
   // 2. La línea no puede atravesar el INTERIOR de un triángulo cerrado.
@@ -1343,7 +1395,7 @@ function lineIntersectsAny(idxA, idxB) {
     for (const [si, sj, sx1, sy1, sx2, sy2] of sides) {
       // Ignorar lados que comparten vértice con los extremos de la nueva arista
       if (si === idxA || si === idxB || sj === idxA || sj === idxB) continue;
-      if (segmentsIntersect(ax, ay, bx, by, sx1, sy1, sx2, sy2)) return true;
+      if (segmentsIntersect(ax, ay, bx, by, sx1, sy1, sx2, sy2)) return withReason ? 'crosses-triangle' : true;
     }
 
     // El punto medio no puede estar dentro del triángulo,
@@ -1351,11 +1403,11 @@ function lineIntersectsAny(idxA, idxB) {
     // (en ese caso la línea sale legítimamente hacia fuera)
     if (!aInTri && !bInTri) {
       const mid_x = (ax + bx) / 2, mid_y = (ay + by) / 2;
-      if (pointInTriangle(mid_x, mid_y, tax, tay, tbx, tby, tcx, tcy)) return true;
+      if (pointInTriangle(mid_x, mid_y, tax, tay, tbx, tby, tcx, tcy)) return withReason ? 'crosses-triangle' : true;
     }
   }
 
-  return false;
+  return withReason ? null : false;
 }
 
 // ¿El punto (px,py) está dentro del triángulo (ax,ay)-(bx,by)-(cx,cy)?
@@ -1729,13 +1781,16 @@ function draw() {
     ctx.globalAlpha = 1; // restaurar siempre
   });
 
-  // Línea "de goma" mientras se arrastra desde el círculo de origen
+  // Línea "de goma" mientras se arrastra desde el círculo de origen —
+  // roja si el destino actual no sería válido, para explicarlo ANTES de
+  // soltar, no solo después.
   if (traceGesture.moved && traceGesture.origin >= 0) {
     const origin = circles[traceGesture.origin];
-    const pc = playerColor(currentPlayer) || '#ffffff';
+    let lineColor = playerColor(currentPlayer) || '#ffffff';
+    if (traceGesture.hoverValid === false) lineColor = canvasColor('#e8836a', '#9c3b26');
     ctx.save();
     ctx.setLineDash([6, 5]);
-    drawLine(origin, { x: traceGesture.curX, y: traceGesture.curY }, pc, 2.5);
+    drawLine(origin, { x: traceGesture.curX, y: traceGesture.curY }, lineColor, 2.5);
     ctx.restore();
   }
 }
