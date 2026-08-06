@@ -42,7 +42,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 16px 16px 72px;
+    padding: 16px 8px 72px;
     gap: 16px;
   }
 
@@ -117,6 +117,13 @@
   }
   .dice:hover { border-color: var(--muted); transform: scale(1.05); }
   .dice.rolling { animation: shake .4s ease; }
+  .dice.settling { animation: dice-settle .28s ease; }
+
+  @keyframes dice-settle {
+    0% { transform: scale(1.22); }
+    60% { transform: scale(0.94); }
+    100% { transform: scale(1); }
+  }
 
   @keyframes shake {
     0%,100% { transform: rotate(0deg) scale(1); }
@@ -164,7 +171,7 @@
     border-radius: 20px;
     overflow: hidden;
     width: 100%;
-    max-width: 700px;
+    max-width: 860px;
     aspect-ratio: 1;
     position: relative;
   }
@@ -452,6 +459,31 @@
   }
   .info-rows dt { color: var(--muted); }
   .info-rows dd { margin: 0; font-weight: 700; }
+  /* ── Confeti ── */
+  .confetti-layer {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 60;
+  }
+  .confetti-piece {
+    position: absolute;
+    top: -5%;
+    border-radius: 2px;
+    opacity: .9;
+    animation-name: confetti-fall;
+    animation-timing-function: ease-in;
+    animation-fill-mode: forwards;
+  }
+  @keyframes confetti-fall {
+    0% { transform: translate(0,0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(var(--drift), 110vh) rotate(var(--rot)); opacity: .35; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
 </style>
 
   <link rel="manifest" href="manifest.json">
@@ -464,7 +496,7 @@
 <body>
 
 <h1>⬤ Juego de Círculos</h1>
-<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.7</div>
+<div style="font-size:.72rem;color:var(--muted);letter-spacing:1px;margin-top:-8px;">v2.8</div>
 
 <!-- Config de nombres -->
 <div id="setupPanel" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:480px;">
@@ -553,6 +585,7 @@
     <h2 id="modalTitle">¡Fin del juego!</h2>
     <p id="modalBody"></p>
     <button class="btn-new" onclick="startGame()">▶ Jugar de nuevo</button>
+    <button class="btn-new" id="shareBtn" onclick="shareResult()" style="margin-top:8px;background:transparent;border:2px solid var(--border);color:var(--text);">Compartir resultado</button>
   </div>
 </div>
 
@@ -574,7 +607,7 @@
   <div class="info-sheet" onclick="event.stopPropagation()">
     <h3>⬤ Juego de Círculos</h3>
     <dl class="info-rows">
-      <div><dt>Versión</dt><dd>v2.7</dd></div>
+      <div><dt>Versión</dt><dd>v2.8</dd></div>
     </dl>
     <button class="btn-new" onclick="document.getElementById('infoOverlay').classList.remove('show')">Cerrar</button>
   </div>
@@ -839,7 +872,8 @@ function startGame() {
 
   canvas = document.getElementById('gameCanvas');
   const wrap = canvas.parentElement;
-  const sz   = wrap.clientWidth;
+  const sz   = boardSize(wrap);
+  wrap.style.width = wrap.style.height = sz + 'px';
   canvas.width  = sz;
   canvas.height = sz;
   W = H = sz;
@@ -902,8 +936,22 @@ function rollDice() {
   if (diceRolled && linesLeft > 0) return; // ya tiró y le quedan líneas
   const dice = document.getElementById('dice');
   dice.classList.add('rolling');
+
+  // Enseñar caras al azar mientras "rueda", no solo agitar el icono con la
+  // cara anterior quieta — se siente mucho más a dado de verdad.
+  let ticks = 0;
+  const flicker = setInterval(() => {
+    updateDiceDisplay(Math.floor(Math.random() * 6) + 1);
+    ticks++;
+    if (ticks % 2 === 0) vibrate(HAPTIC.tap);
+  }, 60);
+
   setTimeout(() => {
+    clearInterval(flicker);
     dice.classList.remove('rolling');
+    dice.classList.add('settling');
+    setTimeout(() => dice.classList.remove('settling'), 300);
+
     const val = Math.floor(Math.random() * 6) + 1;
     linesLeft  = val;
     diceRolled = true;
@@ -1282,13 +1330,76 @@ function endGame() {
   body += '<br><br>';
   const maxScore = sorted[0].score;
   const winners = sorted.filter(p => p.score === maxScore);
+  let resultLine;
   if (winners.length > 1) {
+    resultLine = `🤝 ¡Empate entre ${winners.map(p=>p.name).join(' y ')}!`;
     body += `🤝 ¡Empate entre ${winners.map(p=>`<strong>${p.name}</strong>`).join(' y ')}!`;
   } else {
+    resultLine = `🏆 ¡Gana ${winners[0].name}!`;
     body += `🏆 ¡Gana <strong style="color:${PLAYER_COLORS[winners[0].idx]}">${winners[0].name}</strong>!`;
   }
   document.getElementById('modalBody').innerHTML = body;
   document.getElementById('modalOverlay').classList.add('show');
+
+  lastResultText = buildShareText(sorted, resultLine);
+  launchConfetti(winners.length === 1 ? PLAYER_COLORS[winners[0].idx] : null);
+}
+
+let lastResultText = '';
+
+function buildShareText(sorted, resultLine) {
+  const scores = sorted.map(p => `${p.name}: ${p.score}`).join(' · ');
+  const url = window.location.href.split('?')[0].split('#')[0];
+  return [`⬤ Juego de Círculos`, scores, resultLine, '', '¿Te animas a jugar?', url].join('\n');
+}
+
+async function shareResult() {
+  vibrate(HAPTIC.select);
+  const btn = document.getElementById('shareBtn');
+  const originalLabel = btn.textContent;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ text: lastResultText });
+      return;
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // el usuario canceló, no insistimos
+      // cualquier otro fallo cae al portapapeles
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(lastResultText);
+    btn.textContent = '¡Copiado!';
+    setTimeout(() => { btn.textContent = originalLabel; }, 2200);
+  } catch { /* sin portapapeles disponible; no hay fallback razonable más */ }
+}
+
+// ── Confeti (mismo patrón CSS que elige-tu-pan-quiz, sin librería) ──────────
+function launchConfetti(highlightColor) {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+  const palette = highlightColor ? [highlightColor, ...PLAYER_COLORS] : PLAYER_COLORS;
+  const layer = document.createElement('div');
+  layer.className = 'confetti-layer';
+  layer.setAttribute('aria-hidden', 'true');
+
+  for (let i = 0; i < 60; i++) {
+    const piece = document.createElement('span');
+    const size = 6 + Math.random() * 6;
+    piece.className = 'confetti-piece';
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.width = `${size}px`;
+    piece.style.height = `${size * 0.4}px`;
+    piece.style.background = palette[Math.floor(Math.random() * palette.length)];
+    piece.style.animationDelay = `${Math.random() * 0.4}s`;
+    piece.style.animationDuration = `${2.2 + Math.random() * 1.4}s`;
+    piece.style.setProperty('--rot', `${Math.round(Math.random() * 360)}deg`);
+    piece.style.setProperty('--drift', `${Math.round((Math.random() - 0.5) * 80)}px`);
+    layer.appendChild(piece);
+  }
+
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 3800);
 }
 
 // ── Dibujo ────────────────────────────────────────────────────────────────────
@@ -1299,6 +1410,19 @@ function endGame() {
 // (el bug de "los enlaces posibles desaparecen en claro").
 function canvasColor(darkValue, lightValue) {
   return document.documentElement.getAttribute('data-theme') === 'light' ? lightValue : darkValue;
+}
+
+// ── Tamaño del tablero ───────────────────────────────────────────────────────
+// No solo el ancho disponible: en móviles altos y estrechos, el ancho suele
+// ser el factor limitante aunque sobre alto de pantalla. Usar también el
+// alto disponible deja el tablero notablemente más grande ahí, que es donde
+// más se notaba "justo para jugar".
+function boardSize(wrap) {
+  wrap.style.width = '';
+  wrap.style.height = ''; // vuelve al 100% natural del CSS antes de medir
+  const naturalWidth = wrap.clientWidth;
+  const availableHeight = window.innerHeight * 0.6;
+  return Math.round(Math.min(naturalWidth, availableHeight, 860));
 }
 
 function draw() {
@@ -1500,7 +1624,8 @@ window.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('resize', () => {
   if (!canvas) return;
   const wrap = canvas.parentElement;
-  const sz   = wrap.clientWidth;
+  const sz   = boardSize(wrap);
+  wrap.style.width = wrap.style.height = sz + 'px';
   // Reescalar posiciones
   const scale = sz / W;
   circles.forEach(c => { c.x *= scale; c.y *= scale; });
