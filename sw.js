@@ -1,4 +1,4 @@
-const CACHE = 'juego-circulos-v2.17';
+const CACHE = 'juego-circulos-v2.18';
 const ASSETS = [
   '/juego-circulos/',
   '/juego-circulos/index.html',

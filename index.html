@@ -693,7 +693,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.17';
+const APP_VERSION = 'v2.18';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -1825,6 +1825,14 @@ function draw() {
     ctx.fill();
     ctx.stroke();
     ctx.globalAlpha = 1; // restaurar siempre
+
+    // Número de índice — temporal, para poder reportar "el 7 no conecta
+    // con el 12" en vez de intentar describir posiciones en una captura.
+    ctx.font = `700 ${Math.max(8, Math.round(CIRCLE_R * 0.85))}px 'Nunito', sans-serif`;
+    ctx.fillStyle = canvasColor('rgba(255,255,255,0.85)', 'rgba(26,31,46,0.8)');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(i), c.x, c.y);
   });
 
   // Línea "de goma" mientras se arrastra desde el círculo de origen —
