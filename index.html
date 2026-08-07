@@ -52,6 +52,22 @@
     letter-spacing: 1px;
     color: var(--text);
     text-align: center;
+    transition: font-size .2s ease;
+  }
+
+  /* Cabecera compacta en cuanto empieza la partida — el título grande y la
+     versión no aportan nada mientras juegas, y le quitan sitio al tablero
+     justo cuando más falta hace. Aplica en cualquier orientación (la
+     regla de horizontal de más abajo hacía algo parecido, pero solo ahí). */
+  body.in-game h1 {
+    font-size: 1.05rem;
+    letter-spacing: .5px;
+  }
+  body.in-game #versionTag {
+    display: none;
+  }
+  body.in-game {
+    padding-top: 10px;
   }
 
   /* ── Panel superior ── */
@@ -699,7 +715,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.21';
+const APP_VERSION = 'v2.22';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -963,6 +979,7 @@ function startGame() {
   document.getElementById('setupPanel').style.display = 'none';
   const ui = document.getElementById('gameUI');
   ui.classList.add('is-active');
+  document.body.classList.add('in-game');
 
   // Orden aleatorio: mezclar array de jugadores si está activado
   if (isRandomOrder()) {
