@@ -693,7 +693,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.18';
+const APP_VERSION = 'v2.19';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -1015,7 +1015,7 @@ function generateCircles() {
   const areaPerCircle = area / N_CIRCLES;
   const avgDist = Math.sqrt(areaPerCircle);
   MIN_DIST = Math.max(CIRCLE_R * 2 + 6, avgDist * 0.55);
-  MAX_DIST = avgDist * 1.45;
+  MAX_DIST = avgDist * 1.45; // valor de partida, se recalcula abajo con datos reales
 
   circles = [];
   invalidateActiveCirclesCache();
@@ -1032,27 +1032,77 @@ function generateCircles() {
     if (valid) circles.push({x, y});
   }
 
-  // MAX_DIST recalculado con datos reales, no con la media teórica de
-  // antes: para cada círculo, su distancia al vecino más cercano; nos
-  // quedamos con la peor de esas distancias (el círculo más aislado) y
-  // le damos margen. Así garantizamos que TODO círculo tenga al menos un
-  // vecino alcanzable, sin que un solo caso raro (un círculo que cayó en
-  // una zona muy despejada) dispare el límite para el tablero entero —
-  // que sí pasaría si tomáramos la distancia máxima entre cualquier
-  // pareja, en vez de "la distancia a tu vecino más próximo".
-  let worstNearestNeighbor = 0;
-  for (let i = 0; i < circles.length; i++) {
-    let nearest = Infinity;
-    for (let j = 0; j < circles.length; j++) {
-      if (i === j) continue;
-      const d = dist(circles[i].x, circles[i].y, circles[j].x, circles[j].y);
-      if (d < nearest) nearest = d;
+  MAX_DIST = chooseMaxDistance(circles) || MAX_DIST;
+}
+
+// Elige MAX_DIST según el grado del grafo de adyacencia resultante, no un
+// multiplicador sobre un único dato — es la tercera vez que recalibramos
+// este número (media teórica → peor vecino × margen → esto) porque las
+// anteriores optimizaban una propiedad demasiado débil: "que nadie quede
+// aislado" no es lo mismo que "que la mayoría tenga varias opciones entre
+// las que elegir". Se procesan las parejas en orden creciente de
+// distancia con Union-Find (la conectividad sale gratis del mismo barrido,
+// sin comprobarla aparte) y se para en el primer radio que deje a todo el
+// mundo con al menos 3 vecinos, al 90% con al menos 5, y una media entre
+// 8 y 11 — objetivos de partida, no cifras definitivas; les falta
+// contraste con partidas reales de 25 Y de 100 círculos.
+function chooseMaxDistance(circleList) {
+  const n = circleList.length;
+  if (n < 2) return 0;
+
+  const pairs = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx = circleList[j].x - circleList[i].x;
+      const dy = circleList[j].y - circleList[i].y;
+      pairs.push({ i, j, distSq: dx * dx + dy * dy });
     }
-    if (nearest < Infinity && nearest > worstNearestNeighbor) worstNearestNeighbor = nearest;
   }
-  if (worstNearestNeighbor > 0) {
-    MAX_DIST = Math.max(MAX_DIST, worstNearestNeighbor * 1.4);
+  pairs.sort((a, b) => a.distSq - b.distSq);
+
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(x) {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
   }
+  let components = n;
+  function union(a, b) {
+    const ra = find(a), rb = find(b);
+    if (ra === rb) return;
+    parent[ra] = rb;
+    components--;
+  }
+
+  const degree = new Array(n).fill(0);
+  let denseFallback = null;      // conectado + min 3, aunque acabe algo denso
+  let connectedFallback = null;  // red de seguridad: solo conectado + min 3
+
+  for (const p of pairs) {
+    degree[p.i]++;
+    degree[p.j]++;
+    union(p.i, p.j);
+
+    if (components !== 1) continue; // aún no conectado, seguir añadiendo aristas
+
+    const sorted = [...degree].sort((x, y) => x - y);
+    const minDegree = sorted[0];
+    if (minDegree < 3) continue;
+
+    if (connectedFallback === null) connectedFallback = Math.sqrt(p.distSq) * 1.001;
+
+    const p10Degree = sorted[Math.floor(n * 0.10)];
+    const meanDegree = degree.reduce((s, d) => s + d, 0) / n;
+
+    if (p10Degree >= 5 && meanDegree >= 8) {
+      if (meanDegree <= 12) return Math.sqrt(p.distSq) * 1.001; // pequeño margen: evita que el redondeo de coma flotante excluya justo la pareja que definió el umbral
+      if (denseFallback === null) denseFallback = Math.sqrt(p.distSq) * 1.001;
+    }
+  }
+
+  // No se alcanzó el objetivo "bonito" en ningún punto del barrido —
+  // mejor un tablero conectado con mínimo 3 vecinos, aunque no sea tan
+  // holgado como nos gustaría, que dejar a alguien sin ninguna opción.
+  return denseFallback ?? connectedFallback ?? Math.sqrt(pairs[pairs.length - 1].distSq) * 1.001;
 }
 
 // ── Dado ─────────────────────────────────────────────────────────────────────
@@ -1553,9 +1603,13 @@ function computeActiveCircles() {
   const active = new Set();
   for (let i = 0; i < circles.length; i++) {
     for (let j = i+1; j < circles.length; j++) {
-      if (!edges.has(`${i}-${j}`) &&
-          dist(circles[i].x,circles[i].y,circles[j].x,circles[j].y) <= MAX_DIST &&
-          !lineIntersectsAny(i, j)) {
+      // checkMoveValidity es ahora la ÚNICA fuente de verdad para "¿se
+      // puede conectar esto?" — antes esta función reimplementaba un
+      // subconjunto de las mismas reglas por su cuenta, y se desincronizó
+      // en cuanto añadí la comprobación de "no atrapar círculos" solo en
+      // checkMoveValidity: un círculo podía aparecer resaltado como
+      // jugable aquí y aun así ser rechazado al intentarlo de verdad.
+      if (checkMoveValidity(i, j).valid) {
         active.add(i);
         active.add(j);
       }
