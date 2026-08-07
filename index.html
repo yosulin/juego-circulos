@@ -100,26 +100,45 @@
   #gameUI .canvas-wrap { grid-area: board; }
   #gameUI > .btn-new { grid-area: newgame; align-self: start; }
 
-  @media (orientation: landscape) and (min-width: 640px) {
-    #gameUI {
-      max-width: 1100px;
-      grid-template-columns: 1fr 260px;
-      grid-template-areas:
-        "board players"
-        "board turn"
-        "board newgame";
-      align-items: start;
-    }
-    #gameUI .canvas-wrap { max-width: none; justify-self: center; }
-    #gameUI .top-panel,
-    #gameUI .turn-info,
-    #gameUI > .btn-new { max-width: none; width: 100%; }
-    #gameUI .top-panel { flex-direction: column; }
+  /* ── Bloqueo de orientación: el juego se juega en vertical. La PWA
+     instalada respeta esto vía manifest.json (orientation: portrait-primary);
+     en pestaña normal del navegador no hay forma de forzarlo, así que este
+     aviso cubre ese caso — la partida se queda tal cual está, no se toca
+     ninguna coordenada, solo se oculta visualmente hasta que gires de
+     vuelta. */
+  .portrait-guard { display: none; }
 
-    /* Menos aire arriba para dejarle más alto al tablero */
-    h1 { font-size: 1.4rem; margin-bottom: 0; }
-    body > #versionTag { display: none; }
-    body { padding-top: 8px; gap: 8px; }
+  @media (orientation: landscape) and (pointer: coarse) {
+    body.in-game .portrait-guard {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    body.in-game .portrait-guard .portrait-icon {
+      font-size: 2.5rem;
+      margin-bottom: 8px;
+    }
+    body.in-game .portrait-guard strong {
+      display: block;
+      font-family: 'Fredoka One', cursive;
+      font-size: 1.3rem;
+      margin-bottom: 6px;
+    }
+    body.in-game .portrait-guard p {
+      color: var(--muted);
+      margin: 0;
+    }
+    body.in-game #gameUI {
+      visibility: hidden;
+      pointer-events: none;
+    }
   }
 
   .player-card {
@@ -642,6 +661,14 @@
   <button class="btn-new" onclick="startGame()" style="width:100%;max-width:480px;padding:14px;font-size:1rem;">▶ Empezar</button>
 </div>
 
+<div id="portraitGuard" class="portrait-guard" aria-live="polite">
+  <div>
+    <div class="portrait-icon">↻</div>
+    <strong>Gira el móvil</strong>
+    <p>Juego de Círculos se juega en vertical.</p>
+  </div>
+</div>
+
 <div id="gameUI">
 
   <!-- Tarjetas de jugadores: generadas dinámicamente por buildGameUI() -->
@@ -715,7 +742,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.22';
+const APP_VERSION = 'v2.23';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -1803,8 +1830,7 @@ function boardDimensions(wrap) {
   wrap.style.width = '';
   wrap.style.height = ''; // vuelve al 100% natural del CSS antes de medir
   const naturalWidth = wrap.clientWidth;
-  const isLandscapeLayout = window.matchMedia('(orientation: landscape) and (min-width: 640px)').matches;
-  const availableHeight = window.innerHeight * (isLandscapeLayout ? 0.86 : 0.68);
+  const availableHeight = window.innerHeight * 0.72;
   return {
     width: Math.round(Math.min(naturalWidth, 960)),
     height: Math.round(Math.min(availableHeight, 960))
@@ -2047,43 +2073,28 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // Responsive: redibujar si cambia el tamaño
-function handleBoardResize() {
-  if (!canvas || !circles.length) return;
+// El resize/rotación YA NO toca circles/MAX_DIST/CIRCLE_R en absoluto —
+// esos quedan congelados desde generateCircles() hasta la siguiente
+// partida. Lo único que cambia aquí es cuánto ocupa VISUALMENTE el
+// tablero en pantalla (el recuadro CSS), no sus coordenadas lógicas.
+// boardPoint() ya convierte correctamente de tamaño CSS a coordenadas
+// lógicas vía getBoundingClientRect(), así que un simple cambio de
+// tamaño visual no descoloca los clics/arrastres.
+function fitBoardDisplay() {
+  if (!canvas || !W || !H) return;
   const wrap = canvas.parentElement;
-  const { width, height } = boardDimensions(wrap);
-  wrap.style.width = width + 'px';
-  wrap.style.height = height + 'px';
-
-  // Ancho y alto pueden cambiar en proporciones DISTINTAS (típicamente al
-  // girar el móvil) — un único factor de escala ya no basta. Se reescala
-  // cada eje por separado para las posiciones, y CIRCLE_R/HIT_R con la
-  // media geométrica de los dos factores (para que los círculos sigan
-  // siendo redondos, no se estiren en óvalos).
-  const scaleX = width / W;
-  const scaleY = height / H;
-  const scaleAvg = Math.sqrt(scaleX * scaleY);
-  circles.forEach(c => { c.x *= scaleX; c.y *= scaleY; });
-  CIRCLE_R *= scaleAvg;
-  HIT_R    *= scaleAvg;
-
-  // MAX_DIST no se reescala con un factor — se recalibra desde cero con
-  // las posiciones YA reescaladas, reutilizando chooseMaxDistance() tal
-  // cual (ya verificada). Un estiramiento no uniforme podría dejar el
-  // viejo umbral mal calibrado para la nueva forma del tablero.
-  MAX_DIST = chooseMaxDistance(circles) || MAX_DIST;
-
-  invalidateActiveCirclesCache();
-  applyCanvasSize(width, height);
-  W = width;
-  H = height;
-  draw();
+  const availableWidth = document.documentElement.clientWidth - 16;
+  const availableHeight = window.innerHeight * 0.72;
+  const scale = Math.min(availableWidth / W, availableHeight / H, 1);
+  wrap.style.width = `${Math.round(W * scale)}px`;
+  wrap.style.height = `${Math.round(H * scale)}px`;
 }
-window.addEventListener('resize', handleBoardResize);
+window.addEventListener('resize', fitBoardDisplay);
 // Algunos navegadores móviles no disparan 'resize' de forma fiable al girar
 // el dispositivo — 'orientationchange' es más consistente ahí. Un pequeño
 // retraso porque innerHeight/innerWidth tardan un momento en actualizarse
 // tras el giro en algunos navegadores.
-window.addEventListener('orientationchange', () => setTimeout(handleBoardResize, 150));
+window.addEventListener('orientationchange', () => setTimeout(fitBoardDisplay, 150));
 </script>
 
 <div id="installBanner">
