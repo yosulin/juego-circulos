@@ -209,7 +209,10 @@
     overflow: hidden;
     width: 100%;
     max-width: 960px;
-    aspect-ratio: 1;
+    /* Sin aspect-ratio a propósito: el tablero no tiene por qué ser
+       cuadrado — ancho y alto se fijan por separado en JS según lo que
+       realmente quepa en pantalla, para no desperdiciar la dimensión más
+       generosa. Ver boardDimensions(). */
     position: relative;
   }
 
@@ -693,7 +696,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.19';
+const APP_VERSION = 'v2.20';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -971,11 +974,13 @@ function startGame() {
 
   canvas = document.getElementById('gameCanvas');
   const wrap = canvas.parentElement;
-  const sz   = boardSize(wrap);
-  wrap.style.width = wrap.style.height = sz + 'px';
+  const { width, height } = boardDimensions(wrap);
+  wrap.style.width = width + 'px';
+  wrap.style.height = height + 'px';
   ctx = canvas.getContext('2d');
-  applyCanvasSize(sz);
-  W = H = sz;
+  applyCanvasSize(width, height);
+  W = width;
+  H = height;
 
   edges      = new Set();
   triangles  = [];
@@ -1774,13 +1779,16 @@ function escapeHtml(value) {
 // ser el factor limitante aunque sobre alto de pantalla. Usar también el
 // alto disponible deja el tablero notablemente más grande ahí, que es donde
 // más se notaba "justo para jugar".
-function boardSize(wrap) {
+function boardDimensions(wrap) {
   wrap.style.width = '';
   wrap.style.height = ''; // vuelve al 100% natural del CSS antes de medir
   const naturalWidth = wrap.clientWidth;
   const isLandscapeLayout = window.matchMedia('(orientation: landscape) and (min-width: 640px)').matches;
   const availableHeight = window.innerHeight * (isLandscapeLayout ? 0.86 : 0.68);
-  return Math.round(Math.min(naturalWidth, availableHeight, 960));
+  return {
+    width: Math.round(Math.min(naturalWidth, 960)),
+    height: Math.round(Math.min(availableHeight, 960))
+  };
 }
 
 // El canvas por defecto tiene el mismo número de píxeles de buffer que su
@@ -1789,10 +1797,10 @@ function boardSize(wrap) {
 // tocar el resto del juego, que sigue razonando en esas coordenadas) y se
 // escala solo el buffer real + una transformación, para que se vea nítido
 // sin cambiar ninguna otra cuenta geométrica.
-function applyCanvasSize(sz) {
+function applyCanvasSize(width, height) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(sz * dpr);
-  canvas.height = Math.round(sz * dpr);
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
@@ -2022,22 +2030,32 @@ window.addEventListener('DOMContentLoaded', () => {
 function handleBoardResize() {
   if (!canvas || !circles.length) return;
   const wrap = canvas.parentElement;
-  const sz   = boardSize(wrap);
-  wrap.style.width = wrap.style.height = sz + 'px';
-  // Reescalar posiciones Y también los umbrales geométricos que dependían
-  // del tamaño del tablero al generarlo (MIN_DIST/MAX_DIST/CIRCLE_R/HIT_R).
-  // Sin esto, tras rotar o redimensionar, la relación "quién es adyacente
-  // a quién" deja de coincidir con lo que se ve en pantalla — círculos que
-  // se veían cerca podían dejar de ser conectables, o al revés.
-  const scale = sz / W;
-  circles.forEach(c => { c.x *= scale; c.y *= scale; });
-  MIN_DIST *= scale;
-  MAX_DIST *= scale;
-  CIRCLE_R *= scale;
-  HIT_R    *= scale;
+  const { width, height } = boardDimensions(wrap);
+  wrap.style.width = width + 'px';
+  wrap.style.height = height + 'px';
+
+  // Ancho y alto pueden cambiar en proporciones DISTINTAS (típicamente al
+  // girar el móvil) — un único factor de escala ya no basta. Se reescala
+  // cada eje por separado para las posiciones, y CIRCLE_R/HIT_R con la
+  // media geométrica de los dos factores (para que los círculos sigan
+  // siendo redondos, no se estiren en óvalos).
+  const scaleX = width / W;
+  const scaleY = height / H;
+  const scaleAvg = Math.sqrt(scaleX * scaleY);
+  circles.forEach(c => { c.x *= scaleX; c.y *= scaleY; });
+  CIRCLE_R *= scaleAvg;
+  HIT_R    *= scaleAvg;
+
+  // MAX_DIST no se reescala con un factor — se recalibra desde cero con
+  // las posiciones YA reescaladas, reutilizando chooseMaxDistance() tal
+  // cual (ya verificada). Un estiramiento no uniforme podría dejar el
+  // viejo umbral mal calibrado para la nueva forma del tablero.
+  MAX_DIST = chooseMaxDistance(circles) || MAX_DIST;
+
   invalidateActiveCirclesCache();
-  applyCanvasSize(sz);
-  W = H = sz;
+  applyCanvasSize(width, height);
+  W = width;
+  H = height;
   draw();
 }
 window.addEventListener('resize', handleBoardResize);
