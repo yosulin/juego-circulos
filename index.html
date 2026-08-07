@@ -140,6 +140,9 @@
     align-items: center;
     gap: 6px;
     flex-shrink: 0;      /* el dado no se encoge */
+    width: 92px;          /* fijo: ancho para caber "Tira el dado" sin
+                              reflotar las tarjetas de jugador cuando el
+                              texto cambia a "N líneas" / "Sin líneas" */
   }
 
   .dice {
@@ -696,7 +699,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.20';
+const APP_VERSION = 'v2.21';
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
