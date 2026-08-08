@@ -743,7 +743,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.26';
+const APP_VERSION = 'v2.27';
 // ?debug en la URL: números de índice en los círculos + tabla de métricas
 // del grafo de adyacencia en consola al generar el tablero.
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -1973,20 +1973,41 @@ function runAIMoves() {
 
 function chooseAIMove() {
   const scoringMoves = [];
+  const buildingMoves = []; // deja un triangulo a "2 de 3 lados", pero le toca a ELLA seguir jugando
   const safeMoves = [];
   const anyMoves = [];
+
+  // Si le queda otra línea este mismo turno, "dejar un triángulo a medias"
+  // no es un regalo al rival — es sentar la base para cerrarlo ella misma
+  // en la siguiente jugada. Sin esto, wouldGiftOpponentTriangle() trataba
+  // igual "dejo esto listo para mí mismo ahora" que "dejo esto listo para
+  // el rival en su turno" — por eso nunca construía hacia un triángulo,
+  // solo los cerraba cuando ya salían gratis en una sola línea.
+  const canFollowUpThisTurn = linesLeft > 1;
 
   for (const { i, j } of candidatePairs) {
     if (!checkMoveValidity(i, j).valid) continue;
     anyMoves.push([i, j]);
+
     if (findNewTriangles(i, j).length > 0) {
       scoringMoves.push([i, j]);
-    } else if (!wouldGiftOpponentTriangle(i, j)) {
+      continue;
+    }
+
+    const setsUpATriangle = wouldGiftOpponentTriangle(i, j);
+    if (setsUpATriangle && canFollowUpThisTurn) {
+      buildingMoves.push([i, j]);
+    } else if (!setsUpATriangle) {
       safeMoves.push([i, j]);
     }
+    // setsUpATriangle && !canFollowUpThisTurn: de verdad sería un regalo
+    // (última línea del turno) — se descarta, ni building ni safe
   }
 
-  const pool = scoringMoves.length ? scoringMoves : (safeMoves.length ? safeMoves : anyMoves);
+  const pool = scoringMoves.length ? scoringMoves
+    : buildingMoves.length ? buildingMoves
+    : safeMoves.length ? safeMoves
+    : anyMoves;
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)];
 }
