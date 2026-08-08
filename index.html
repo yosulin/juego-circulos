@@ -742,7 +742,10 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.23';
+const APP_VERSION = 'v2.24';
+// ?debug en la URL: números de índice en los círculos + tabla de métricas
+// del grafo de adyacencia en consola al generar el tablero.
+const DEBUG = new URLSearchParams(location.search).has('debug');
 
 let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
@@ -786,6 +789,21 @@ let currentPlayer = 0;
 let linesLeft = 0;     // líneas que puede trazar este turno (tras tirar dado)
 let diceRolled = false;
 let selectedCircle = null;
+
+function getLegalTargets(origin) {
+  const targets = new Set();
+  for (const target of candidateNeighbors[origin] || []) {
+    if (checkMoveValidity(origin, target).valid) targets.add(target);
+  }
+  return targets;
+}
+
+// Único punto que cambia selectedCircle — así selectedTargetsCache nunca
+// se desincroniza de qué círculo está seleccionado de verdad.
+function setSelectedCircle(idx) {
+  selectedCircle = idx;
+  selectedTargetsCache = (idx === null) ? null : getLegalTargets(idx);
+}
 
 let canvas, ctx, W, H;
 
@@ -1034,7 +1052,7 @@ function startGame() {
   currentPlayer = 0;
   linesLeft  = 0;
   diceRolled = false;
-  selectedCircle = null;
+  setSelectedCircle(null);
 
   generateCircles();
   updateDiceDisplay(0);
@@ -1054,6 +1072,35 @@ function confirmNewGame() {
 }
 
 // ── Generación de círculos ───────────────────────────────────────────────────
+let candidatePairs = [];       // [{i,j,distSq}, ...] — solo parejas dentro de MAX_DIST
+let candidateNeighbors = [];   // candidateNeighbors[i] = [j, k, ...]
+
+function generateCirclePositions() {
+  const padding = CIRCLE_R + 20;
+  const placed = [];
+  let attempts = 0;
+  while (placed.length < N_CIRCLES && attempts < 5000) {
+    attempts++;
+    const x = padding + Math.random() * (W - padding * 2);
+    const y = padding + Math.random() * (H - padding * 2);
+    let valid = true;
+    for (const c of placed) {
+      if (dist(x, y, c.x, c.y) < MIN_DIST) { valid = false; break; }
+    }
+    if (valid) placed.push({ x, y });
+  }
+  return placed;
+}
+
+function buildCandidateGraph(pairs) {
+  candidatePairs = pairs;
+  candidateNeighbors = Array.from({ length: circles.length }, () => []);
+  for (const { i, j } of pairs) {
+    candidateNeighbors[i].push(j);
+    candidateNeighbors[j].push(i);
+  }
+}
+
 function generateCircles() {
   // Ajustar tamaño y distancias según N_CIRCLES
   // Radio visual: interpola entre 16px (25 círculos) y 7px (100 círculos)
@@ -1067,24 +1114,83 @@ function generateCircles() {
   const areaPerCircle = area / N_CIRCLES;
   const avgDist = Math.sqrt(areaPerCircle);
   MIN_DIST = Math.max(CIRCLE_R * 2 + 6, avgDist * 0.55);
-  MAX_DIST = avgDist * 1.45; // valor de partida, se recalcula abajo con datos reales
 
-  circles = [];
   invalidateActiveCirclesCache();
-  const padding = CIRCLE_R + 20;
-  let attempts = 0;
-  while (circles.length < N_CIRCLES && attempts < 5000) {
-    attempts++;
-    const x = padding + Math.random() * (W - padding * 2);
-    const y = padding + Math.random() * (H - padding * 2);
-    let valid = true;
-    for (const c of circles) {
-      if (dist(x, y, c.x, c.y) < MIN_DIST) { valid = false; break; }
+  selectedTargetsCache = null;
+
+  // Hasta 20 intentos con posiciones distintas si el primer resultado no
+  // llega ni al mínimo aceptable (conectado + grado 3) — mejor descartar
+  // una disposición rara que aceptar cualquier cosa y compensarlo con un
+  // MAX_DIST enorme.
+  const MAX_BOARD_ATTEMPTS = 20;
+  let best = null;
+  for (let attempt = 0; attempt < MAX_BOARD_ATTEMPTS; attempt++) {
+    const positions = generateCirclePositions();
+    if (positions.length !== N_CIRCLES) continue; // no cupieron todos, descartar
+
+    const adjacency = chooseAdjacency(positions);
+    if (!adjacency) continue;
+
+    // Nos quedamos con el primero que cumpla el objetivo "bonito"
+    // (media 8-11, p10>=5); si ninguno lo cumple en 20 intentos, el
+    // último resultado válido sirve de red de seguridad.
+    best = { positions, adjacency };
+    const m = adjacency.metrics;
+    if (m.p10Degree >= ADJACENCY_TARGET.p10Degree &&
+        m.meanDegree >= ADJACENCY_TARGET.meanMin &&
+        m.meanDegree <= ADJACENCY_TARGET.meanMax) {
+      break;
     }
-    if (valid) circles.push({x, y});
   }
 
-  MAX_DIST = chooseMaxDistance(circles) || MAX_DIST;
+  if (!best) {
+    // Los 20 intentos fallaron incluso el mínimo — situación muy rara
+    // (tablero minúsculo o N_CIRCLES pidiendo demasiado para el área).
+    // Nos quedamos con lo último que haya, sin dejar el juego sin tablero.
+    const positions = generateCirclePositions();
+    best = { positions, adjacency: chooseAdjacency(positions) || { maxDistance: avgDist * 1.45, pairs: [], metrics: null } };
+  }
+
+  circles = best.positions;
+  MAX_DIST = best.adjacency.maxDistance;
+  buildCandidateGraph(best.adjacency.pairs);
+
+  if (DEBUG && best.adjacency.metrics) {
+    console.table({ N_CIRCLES, MAX_DIST: Math.round(MAX_DIST), ...best.adjacency.metrics });
+  }
+}
+
+// Objetivos de calibración del grado del grafo de adyacencia — nombrados,
+// no embebidos en la función, para poder ajustarlos (o probar NORMAL/
+// DENSE/SPARSE) sin tocar el algoritmo.
+const ADJACENCY_TARGET = {
+  minDegree: 3,
+  p10Degree: 5,
+  meanMin: 8,
+  meanMax: 11
+};
+
+// ¿El segmento i-j pasa por ENCIMA de otro círculo? Si es así, esa conexión
+// nunca sería realmente trazable (lineIntersectsAny la rechazaría), así
+// que no debe contar para el grado de adyacencia al calibrar — antes
+// "vecino dentro del radio" incluía conexiones que en la práctica jamás
+// se podían dibujar.
+function segmentPassesOverCircle(circleList, idxA, idxB, radius) {
+  const a = circleList[idxA], b = circleList[idxB];
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return true;
+
+  for (let k = 0; k < circleList.length; k++) {
+    if (k === idxA || k === idxB) continue;
+    const c = circleList[k];
+    const t = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.y - a.y) * dy) / lenSq));
+    if (t <= 0.05 || t >= 0.95) continue;
+    const px = a.x + t * dx, py = a.y + t * dy;
+    const ddx = c.x - px, ddy = c.y - py;
+    if (ddx * ddx + ddy * ddy < radius * radius) return true;
+  }
+  return false;
 }
 
 // Elige MAX_DIST según el grado del grafo de adyacencia resultante, no un
@@ -1094,23 +1200,27 @@ function generateCircles() {
 // aislado" no es lo mismo que "que la mayoría tenga varias opciones entre
 // las que elegir". Se procesan las parejas en orden creciente de
 // distancia con Union-Find (la conectividad sale gratis del mismo barrido,
-// sin comprobarla aparte) y se para en el primer radio que deje a todo el
-// mundo con al menos 3 vecinos, al 90% con al menos 5, y una media entre
-// 8 y 11 — objetivos de partida, no cifras definitivas; les falta
-// contraste con partidas reales de 25 Y de 100 círculos.
-function chooseMaxDistance(circleList) {
+// sin comprobarla aparte) y se para en el primer radio que cumpla
+// ADJACENCY_TARGET. Devuelve null si ni siquiera el peor de los
+// respaldos resulta razonable — generatePlayableBoard() decide entonces
+// si regenerar el tablero entero con otras posiciones.
+function chooseAdjacency(circleList) {
   const n = circleList.length;
-  if (n < 2) return 0;
+  if (n < 2) return null;
 
-  const pairs = [];
+  const allPairs = [];
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const dx = circleList[j].x - circleList[i].x;
       const dy = circleList[j].y - circleList[i].y;
-      pairs.push({ i, j, distSq: dx * dx + dy * dy });
+      allPairs.push({ i, j, distSq: dx * dx + dy * dy });
     }
   }
-  pairs.sort((a, b) => a.distSq - b.distSq);
+  allPairs.sort((a, b) => a.distSq - b.distSq);
+
+  // Filtrar las que nunca serían trazables de verdad — no cuentan para el grado
+  const pairs = allPairs.filter(p => !segmentPassesOverCircle(circleList, p.i, p.j, CIRCLE_R));
+  if (pairs.length === 0) return null;
 
   const parent = Array.from({ length: n }, (_, i) => i);
   function find(x) {
@@ -1126,35 +1236,51 @@ function chooseMaxDistance(circleList) {
   }
 
   const degree = new Array(n).fill(0);
-  let denseFallback = null;      // conectado + min 3, aunque acabe algo denso
-  let connectedFallback = null;  // red de seguridad: solo conectado + min 3
+  let denseFallback = null;
+  let connectedFallback = null;
 
-  for (const p of pairs) {
+  function metricsAt(cutIndex) {
+    const sorted = [...degree].sort((x, y) => x - y);
+    return {
+      minDegree: sorted[0],
+      p10Degree: sorted[Math.floor(n * 0.10)],
+      medianDegree: sorted[Math.floor(n * 0.5)],
+      meanDegree: degree.reduce((s, d) => s + d, 0) / n,
+      p90Degree: sorted[Math.min(n - 1, Math.ceil(n * 0.90))],
+      candidateEdges: cutIndex + 1,
+      connectedComponents: components
+    };
+  }
+
+  for (let idx = 0; idx < pairs.length; idx++) {
+    const p = pairs[idx];
     degree[p.i]++;
     degree[p.j]++;
     union(p.i, p.j);
 
-    if (components !== 1) continue; // aún no conectado, seguir añadiendo aristas
+    if (components !== 1) continue;
 
-    const sorted = [...degree].sort((x, y) => x - y);
-    const minDegree = sorted[0];
-    if (minDegree < 3) continue;
+    const m = metricsAt(idx);
+    if (m.minDegree < ADJACENCY_TARGET.minDegree) continue;
 
-    if (connectedFallback === null) connectedFallback = Math.sqrt(p.distSq) * 1.001;
+    const maxDistance = Math.sqrt(p.distSq) * 1.001;
+    if (connectedFallback === null) connectedFallback = { maxDistance, maxDistanceSq: p.distSq, metrics: m, cutIndex: idx };
 
-    const p10Degree = sorted[Math.floor(n * 0.10)];
-    const meanDegree = degree.reduce((s, d) => s + d, 0) / n;
-
-    if (p10Degree >= 5 && meanDegree >= 8) {
-      if (meanDegree <= 12) return Math.sqrt(p.distSq) * 1.001; // pequeño margen: evita que el redondeo de coma flotante excluya justo la pareja que definió el umbral
-      if (denseFallback === null) denseFallback = Math.sqrt(p.distSq) * 1.001;
+    if (m.p10Degree >= ADJACENCY_TARGET.p10Degree && m.meanDegree >= ADJACENCY_TARGET.meanMin) {
+      if (m.meanDegree <= ADJACENCY_TARGET.meanMax) {
+        return finalizeAdjacency(pairs, idx, maxDistance, p.distSq, m);
+      }
+      if (denseFallback === null) denseFallback = { maxDistance, maxDistanceSq: p.distSq, metrics: m, cutIndex: idx };
     }
   }
 
-  // No se alcanzó el objetivo "bonito" en ningún punto del barrido —
-  // mejor un tablero conectado con mínimo 3 vecinos, aunque no sea tan
-  // holgado como nos gustaría, que dejar a alguien sin ninguna opción.
-  return denseFallback ?? connectedFallback ?? Math.sqrt(pairs[pairs.length - 1].distSq) * 1.001;
+  const chosen = denseFallback ?? connectedFallback;
+  if (!chosen) return null; // ni conectado con el minimo se consiguio: tablero para regenerar
+  return finalizeAdjacency(pairs, chosen.cutIndex, chosen.maxDistance, chosen.maxDistanceSq, chosen.metrics);
+}
+
+function finalizeAdjacency(pairs, cutIndex, maxDistance, maxDistanceSq, metrics) {
+  return { maxDistance, maxDistanceSq, pairs: pairs.slice(0, cutIndex + 1), metrics };
 }
 
 // ── Dado ─────────────────────────────────────────────────────────────────────
@@ -1241,7 +1367,7 @@ function handleCanvasPointerMove(e) {
   if (!traceGesture.moved) {
     if (dist(traceGesture.startX, traceGesture.startY, mx, my) < TRACE_DRAG_THRESHOLD) return;
     traceGesture.moved = true;
-    if (traceGesture.origin >= 0) selectedCircle = traceGesture.origin;
+    if (traceGesture.origin >= 0) setSelectedCircle(traceGesture.origin);
   }
   traceGesture.curX = mx;
   traceGesture.curY = my;
@@ -1268,7 +1394,7 @@ function handleCanvasPointerUp(e) {
   if (origin === -1) {
     // Empezó en espacio vacío: deseleccionar, igual que el tap de siempre
     // sobre espacio vacío.
-    selectedCircle = null;
+    setSelectedCircle(null);
     draw();
     return;
   }
@@ -1278,7 +1404,7 @@ function handleCanvasPointerUp(e) {
     if (hit === -1 || hit === origin) {
       // soltó fuera del tablero o volvió al mismo círculo: cancela el
       // trazo, pero deja el círculo seleccionado para reintentarlo
-      selectedCircle = origin;
+      setSelectedCircle(origin);
       draw();
       return;
     }
@@ -1289,13 +1415,13 @@ function handleCanvasPointerUp(e) {
   // No hubo arrastre real (movimiento por debajo del umbral): tap normal,
   // exactamente el mismo comportamiento de siempre.
   if (selectedCircle === null) {
-    selectedCircle = origin;
+    setSelectedCircle(origin);
     vibrate(HAPTIC.tap);
     draw();
     return;
   }
   if (selectedCircle === origin) {
-    selectedCircle = null;
+    setSelectedCircle(null);
     draw();
     return;
   }
@@ -1306,7 +1432,7 @@ function handleCanvasPointerCancel(e) {
   if (traceGesture.pointerId !== e.pointerId) return;
   const origin = traceGesture.origin;
   traceGesture = { pointerId: null, startX: 0, startY: 0, origin: null, moved: false, curX: 0, curY: 0 };
-  if (origin >= 0) selectedCircle = origin;
+  if (origin >= 0) setSelectedCircle(origin);
   draw();
 }
 
@@ -1382,7 +1508,7 @@ function attemptConnect(fromIdx, toIdx) {
     // además se explica por qué, en vez de simplemente no pasar nada
     vibrate(HAPTIC.dismiss);
     showInvalidMoveReason(check.message);
-    selectedCircle = toIdx;
+    setSelectedCircle(toIdx);
     draw();
     return;
   }
@@ -1412,7 +1538,7 @@ function attemptConnect(fromIdx, toIdx) {
     vibrate(HAPTIC.select);
   }
 
-  selectedCircle = null;
+  setSelectedCircle(null);
   draw();
 
   if (linesLeft === 0) {
@@ -1592,6 +1718,10 @@ function findNewTriangles(a, b) {
 // Una sola función, cacheada, y solo se invalida cuando de verdad cambia
 // algo (se traza una línea, o se genera un tablero nuevo).
 let activeCirclesCache = null;
+// Destinos válidos del círculo actualmente seleccionado — se recalcula solo
+// al seleccionar uno nuevo, no en cada draw() (que ahora corre en cada
+// pointermove durante un arrastre).
+let selectedTargetsCache = null;
 
 // ── Diálogos accesibles ──────────────────────────────────────────────────
 // Escape cierra, el foco entra al abrir y vuelve a quien lo abrió al
@@ -1648,23 +1778,22 @@ document.addEventListener('keydown', (e) => {
 
 function invalidateActiveCirclesCache() {
   activeCirclesCache = null;
+  selectedTargetsCache = null;
 }
 
 function computeActiveCircles() {
   if (activeCirclesCache !== null) return activeCirclesCache;
   const active = new Set();
-  for (let i = 0; i < circles.length; i++) {
-    for (let j = i+1; j < circles.length; j++) {
-      // checkMoveValidity es ahora la ÚNICA fuente de verdad para "¿se
-      // puede conectar esto?" — antes esta función reimplementaba un
-      // subconjunto de las mismas reglas por su cuenta, y se desincronizó
-      // en cuanto añadí la comprobación de "no atrapar círculos" solo en
-      // checkMoveValidity: un círculo podía aparecer resaltado como
-      // jugable aquí y aun así ser rechazado al intentarlo de verdad.
-      if (checkMoveValidity(i, j).valid) {
-        active.add(i);
-        active.add(j);
-      }
+  // Recorre solo candidatePairs (las parejas dentro de MAX_DIST que se
+  // precalcularon al generar el tablero) en vez de las N² parejas
+  // completas — con grado medio ~10 y 100 círculos, eso son ~500 parejas
+  // en vez de 4.950. checkMoveValidity() sigue siendo la única fuente de
+  // verdad para las reglas dinámicas (arista existe, cruces, atrapa
+  // círculo...), esto solo evita repetir el filtro de distancia de nuevo.
+  for (const { i, j } of candidatePairs) {
+    if (checkMoveValidity(i, j).valid) {
+      active.add(i);
+      active.add(j);
     }
   }
   activeCirclesCache = active;
@@ -1710,7 +1839,7 @@ function showBlockedMessage(remaining) {
   const color = playerColor(currentPlayer) || '#fff';
   const el = document.getElementById('turnInfo');
   el.innerHTML = `<span style="color:${color}">${escapeHtml(p.name)}</span> — sin movimientos posibles, pierde ${remaining} línea${remaining !== 1 ? 's' : ''}`;
-  selectedCircle = null;
+  setSelectedCircle(null);
 }
 
 function endGame() {
@@ -1883,15 +2012,10 @@ function draw() {
   // Línea provisional: desde seleccionado hasta cursor (no implementada — se dibuja abajo)
 
   // Líneas adyacentes posibles del seleccionado (hint visual)
-  if (selectedCircle !== null && linesLeft > 0) {
+  if (selectedCircle !== null && linesLeft > 0 && selectedTargetsCache) {
     const sc = circles[selectedCircle];
-    circles.forEach((c, i) => {
-      if (i === selectedCircle) return;
-      if (dist(sc.x, sc.y, c.x, c.y) <= MAX_DIST &&
-          !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
-          !lineIntersectsAny(selectedCircle, i)) {
-        drawLine(sc, c, canvasColor('rgba(255,255,255,0.07)', 'rgba(26,31,46,0.15)'), 1.5);
-      }
+    selectedTargetsCache.forEach(i => {
+      drawLine(sc, circles[i], canvasColor('rgba(255,255,255,0.07)', 'rgba(26,31,46,0.15)'), 1.5);
     });
   }
 
@@ -1901,10 +2025,7 @@ function draw() {
   // Círculos
   circles.forEach((c, i) => {
     const isSelected = i === selectedCircle;
-    const isAdj = selectedCircle !== null && i !== selectedCircle &&
-                  dist(circles[selectedCircle].x, circles[selectedCircle].y, c.x, c.y) <= MAX_DIST &&
-                  !edges.has(`${Math.min(selectedCircle,i)}-${Math.max(selectedCircle,i)}`) &&
-                  !lineIntersectsAny(selectedCircle, i);
+    const isAdj = selectedTargetsCache ? selectedTargetsCache.has(i) : false;
     const isBlocked = activeCircles !== null && !activeCircles.has(i);
 
     ctx.beginPath();
@@ -1934,13 +2055,16 @@ function draw() {
     ctx.stroke();
     ctx.globalAlpha = 1; // restaurar siempre
 
-    // Número de índice — temporal, para poder reportar "el 7 no conecta
-    // con el 12" en vez de intentar describir posiciones en una captura.
-    ctx.font = `700 ${Math.max(8, Math.round(CIRCLE_R * 0.85))}px 'Nunito', sans-serif`;
-    ctx.fillStyle = canvasColor('rgba(255,255,255,0.85)', 'rgba(26,31,46,0.8)');
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(i), c.x, c.y);
+    // Número de índice — solo con ?debug en la URL. Muy útil para reportar
+    // "el 7 no conecta con el 12" en vez de describir posiciones en una
+    // captura, pero no es parte del diseño normal del juego.
+    if (DEBUG) {
+      ctx.font = `700 ${Math.max(8, Math.round(CIRCLE_R * 0.85))}px 'Nunito', sans-serif`;
+      ctx.fillStyle = canvasColor('rgba(255,255,255,0.85)', 'rgba(26,31,46,0.8)');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(i), c.x, c.y);
+    }
   });
 
   // Línea "de goma" mientras se arrastra desde el círculo de origen —
