@@ -108,7 +108,7 @@
      vuelta. */
   .portrait-guard { display: none; }
 
-  @media (orientation: landscape) and (pointer: coarse) {
+  @media (orientation: landscape) and (any-pointer: coarse) {
     body.in-game .portrait-guard {
       position: fixed;
       inset: 0;
@@ -742,7 +742,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.24';
+const APP_VERSION = 'v2.25';
 // ?debug en la URL: números de índice en los círculos + tabla de métricas
 // del grafo de adyacencia en consola al generar el tablero.
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -751,6 +751,7 @@ let CIRCLE_R  = 14;    // radio visual (se recalcula según N_CIRCLES)
 let HIT_R     = 22;    // radio de click (siempre táctil)
 let MIN_DIST  = 70;    // distancia mínima entre centros (se recalcula)
 let MAX_DIST  = 160;   // distancia máxima para ser adyacentes (se recalcula)
+let MAX_DIST_SQ = MAX_DIST * MAX_DIST; // fuente de verdad para comparar — evita el sqrt en cada comprobación
 let N_CIRCLES = 35;    // número de círculos (configurable)
 
 // Disposiciones de puntos en el dado (cuadrícula 3x3, índices 0-8)
@@ -1010,6 +1011,7 @@ function initPlayerCountSelector() {
 // ── Inicio ──────────────────────────────────────────────────────────────────
 function startGame() {
   vibrate(HAPTIC.celebrate);
+  resetRollState();
   // Leer nombres dinámicos
   players = [];
   for (let i = 0; i < numPlayers; i++) {
@@ -1034,7 +1036,7 @@ function startGame() {
     }
   }
 
-  document.getElementById('modalOverlay').classList.remove('show');
+  closeDialog('modalOverlay');
   buildGameUI();
 
   canvas = document.getElementById('gameCanvas');
@@ -1054,7 +1056,7 @@ function startGame() {
   diceRolled = false;
   setSelectedCircle(null);
 
-  generateCircles();
+  if (!generateCircles()) return; // aviso ya mostrado, vuelta al menú ya hecha
   updateDiceDisplay(0);
   updateActiveCards();
   updateTurnInfo();
@@ -1064,6 +1066,14 @@ function startGame() {
   canvas.onpointermove = handleCanvasPointerMove;
   canvas.onpointerup = handleCanvasPointerUp;
   canvas.onpointercancel = handleCanvasPointerCancel;
+
+  // El dado es el siguiente paso lógico de cualquier partida nueva —
+  // enfocarlo explícitamente es más fiable que confiar en "vuelve a lo
+  // que estuviera enfocado antes", sobre todo tras cerrar el modal de fin
+  // de partida.
+  requestAnimationFrame(() => {
+    document.getElementById('dice')?.focus();
+  });
 }
 
 function confirmNewGame() {
@@ -1075,7 +1085,7 @@ function confirmNewGame() {
 let candidatePairs = [];       // [{i,j,distSq}, ...] — solo parejas dentro de MAX_DIST
 let candidateNeighbors = [];   // candidateNeighbors[i] = [j, k, ...]
 
-function generateCirclePositions() {
+function generateCirclePositions(minDist) {
   const padding = CIRCLE_R + 20;
   const placed = [];
   let attempts = 0;
@@ -1085,7 +1095,7 @@ function generateCirclePositions() {
     const y = padding + Math.random() * (H - padding * 2);
     let valid = true;
     for (const c of placed) {
-      if (dist(x, y, c.x, c.y) < MIN_DIST) { valid = false; break; }
+      if (dist(x, y, c.x, c.y) < minDist) { valid = false; break; }
     }
     if (valid) placed.push({ x, y });
   }
@@ -1099,6 +1109,31 @@ function buildCandidateGraph(pairs) {
     candidateNeighbors[i].push(j);
     candidateNeighbors[j].push(i);
   }
+}
+
+// Intenta generar un tablero completo (los N_CIRCLES pedidos, colocados)
+// con una separación mínima dada. Se queda con el primero que alcance el
+// objetivo "bonito" (grado medio 8-11); si ninguno lo alcanza pero sí hay
+// alguno conectado con el mínimo aceptable, ese sirve de red de
+// seguridad. Nunca devuelve un tablero con menos círculos de los pedidos.
+function attemptBoardGeneration(minDist, maxAttempts) {
+  let best = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const positions = generateCirclePositions(minDist);
+    if (positions.length !== N_CIRCLES) continue; // no cupieron todos: descartar, no aceptar de menos
+
+    const adjacency = chooseAdjacency(positions);
+    if (!adjacency) continue;
+
+    best = { positions, adjacency };
+    const m = adjacency.metrics;
+    if (m.p10Degree >= ADJACENCY_TARGET.p10Degree &&
+        m.meanDegree >= ADJACENCY_TARGET.meanMin &&
+        m.meanDegree <= ADJACENCY_TARGET.meanMax) {
+      return best; // el objetivo "bonito", no hace falta seguir intentando
+    }
+  }
+  return best; // null si ni uno solo salió completo+conectado+grado mínimo
 }
 
 function generateCircles() {
@@ -1118,46 +1153,38 @@ function generateCircles() {
   invalidateActiveCirclesCache();
   selectedTargetsCache = null;
 
-  // Hasta 20 intentos con posiciones distintas si el primer resultado no
-  // llega ni al mínimo aceptable (conectado + grado 3) — mejor descartar
-  // una disposición rara que aceptar cualquier cosa y compensarlo con un
-  // MAX_DIST enorme.
-  const MAX_BOARD_ATTEMPTS = 20;
-  let best = null;
-  for (let attempt = 0; attempt < MAX_BOARD_ATTEMPTS; attempt++) {
-    const positions = generateCirclePositions();
-    if (positions.length !== N_CIRCLES) continue; // no cupieron todos, descartar
-
-    const adjacency = chooseAdjacency(positions);
-    if (!adjacency) continue;
-
-    // Nos quedamos con el primero que cumpla el objetivo "bonito"
-    // (media 8-11, p10>=5); si ninguno lo cumple en 20 intentos, el
-    // último resultado válido sirve de red de seguridad.
-    best = { positions, adjacency };
-    const m = adjacency.metrics;
-    if (m.p10Degree >= ADJACENCY_TARGET.p10Degree &&
-        m.meanDegree >= ADJACENCY_TARGET.meanMin &&
-        m.meanDegree <= ADJACENCY_TARGET.meanMax) {
-      break;
-    }
+  // 20 intentos a distancia completa; si ninguno cupo entero o ninguno
+  // llegó ni al mínimo aceptable, relajar MIN_DIST progresivamente (3%
+  // cada vez, 10 intentos por escalón) en vez de aceptar un tablero con
+  // menos círculos de los pedidos — eso sería silencioso e imposible de
+  // notar hasta que alguien contara los círculos.
+  let best = attemptBoardGeneration(MIN_DIST, 20);
+  for (const relax of [0.97, 0.94, 0.91, 0.88]) {
+    if (best) break;
+    best = attemptBoardGeneration(MIN_DIST * relax, 10);
   }
 
   if (!best) {
-    // Los 20 intentos fallaron incluso el mínimo — situación muy rara
-    // (tablero minúsculo o N_CIRCLES pidiendo demasiado para el área).
-    // Nos quedamos con lo último que haya, sin dejar el juego sin tablero.
-    const positions = generateCirclePositions();
-    best = { positions, adjacency: chooseAdjacency(positions) || { maxDistance: avgDist * 1.45, pairs: [], metrics: null } };
+    // Ni relajando MIN_DIST cuatro veces se consiguió un tablero completo
+    // — situación extremadamente rara (pantalla minúscula pidiendo 100
+    // círculos). Mejor avisar con claridad y volver al menú que arrancar
+    // con un tablero roto.
+    alert('No se ha podido generar el tablero con este número de círculos. Prueba con menos, o con más espacio en pantalla.');
+    document.getElementById('gameUI').classList.remove('is-active');
+    document.getElementById('setupPanel').style.display = 'flex';
+    document.body.classList.remove('in-game');
+    return false;
   }
 
   circles = best.positions;
   MAX_DIST = best.adjacency.maxDistance;
+  MAX_DIST_SQ = best.adjacency.maxDistanceSq;
   buildCandidateGraph(best.adjacency.pairs);
 
   if (DEBUG && best.adjacency.metrics) {
     console.table({ N_CIRCLES, MAX_DIST: Math.round(MAX_DIST), ...best.adjacency.metrics });
   }
+  return true;
 }
 
 // Objetivos de calibración del grado del grafo de adyacencia — nombrados,
@@ -1263,28 +1290,58 @@ function chooseAdjacency(circleList) {
     const m = metricsAt(idx);
     if (m.minDegree < ADJACENCY_TARGET.minDegree) continue;
 
-    const maxDistance = Math.sqrt(p.distSq) * 1.001;
-    if (connectedFallback === null) connectedFallback = { maxDistance, maxDistanceSq: p.distSq, metrics: m, cutIndex: idx };
+    // Sin margen ×1.001: antes checkMoveValidity() (que compara contra
+    // MAX_DIST directamente) podía aceptar una pareja que quedaba FUERA
+    // de candidatePairs (cortado por índice, no por esa misma distancia
+    // inflada) — una pequeña ventana donde "es adyacente" y "está en la
+    // lista de candidatos" no coincidían del todo. Ahora maxDistanceSq ES
+    // la distancia real de la pareja límite, y finalizeAdjacency() filtra
+    // por esa distancia exacta (con tolerancia de coma flotante), no por
+    // posición en el array — así incluye también cualquier empate exacto.
+    if (connectedFallback === null) connectedFallback = { maxDistanceSq: p.distSq, metrics: m };
 
     if (m.p10Degree >= ADJACENCY_TARGET.p10Degree && m.meanDegree >= ADJACENCY_TARGET.meanMin) {
       if (m.meanDegree <= ADJACENCY_TARGET.meanMax) {
-        return finalizeAdjacency(pairs, idx, maxDistance, p.distSq, m);
+        return finalizeAdjacency(pairs, p.distSq, m);
       }
-      if (denseFallback === null) denseFallback = { maxDistance, maxDistanceSq: p.distSq, metrics: m, cutIndex: idx };
+      if (denseFallback === null) denseFallback = { maxDistanceSq: p.distSq, metrics: m };
     }
   }
 
   const chosen = denseFallback ?? connectedFallback;
   if (!chosen) return null; // ni conectado con el minimo se consiguio: tablero para regenerar
-  return finalizeAdjacency(pairs, chosen.cutIndex, chosen.maxDistance, chosen.maxDistanceSq, chosen.metrics);
+  return finalizeAdjacency(pairs, chosen.maxDistanceSq, chosen.metrics);
 }
 
-function finalizeAdjacency(pairs, cutIndex, maxDistance, maxDistanceSq, metrics) {
-  return { maxDistance, maxDistanceSq, pairs: pairs.slice(0, cutIndex + 1), metrics };
+function finalizeAdjacency(pairs, maxDistanceSq, metrics) {
+  const candidatePairs = pairs.filter(p => p.distSq <= maxDistanceSq + DIST_EPS);
+  return {
+    maxDistance: Math.sqrt(maxDistanceSq),
+    maxDistanceSq,
+    pairs: candidatePairs,
+    metrics: { ...metrics, candidateEdges: candidatePairs.length }
+  };
 }
 
 // ── Dado ─────────────────────────────────────────────────────────────────────
 let isRolling = false;
+let rollTimer = null;
+
+// Cancela cualquier tirada pendiente — sin esto, tirar el dado y darle a
+// "Nuevo juego" antes de que pasen los 420ms del giro podía dejar que la
+// tirada de la partida VIEJA resolviera dentro de la partida nueva.
+function resetRollState() {
+  if (rollTimer !== null) {
+    clearTimeout(rollTimer);
+    rollTimer = null;
+  }
+  isRolling = false;
+  const dice = document.getElementById('dice');
+  if (dice) {
+    dice.classList.remove('rolling');
+    dice.removeAttribute('aria-disabled');
+  }
+}
 
 function rollDice() {
   if (isRolling || (diceRolled && linesLeft > 0)) return; // ya tiró y le quedan líneas
@@ -1292,7 +1349,8 @@ function rollDice() {
   const dice = document.getElementById('dice');
   dice.classList.add('rolling');
   dice.setAttribute('aria-disabled', 'true');
-  setTimeout(() => {
+  rollTimer = setTimeout(() => {
+    rollTimer = null;
     isRolling = false;
     dice.classList.remove('rolling');
     dice.removeAttribute('aria-disabled');
@@ -1360,6 +1418,16 @@ function handleCanvasPointerDown(e) {
   canvas.setPointerCapture(e.pointerId);
 }
 
+let drawRequested = false;
+function requestDraw() {
+  if (drawRequested) return;
+  drawRequested = true;
+  requestAnimationFrame(() => {
+    drawRequested = false;
+    draw();
+  });
+}
+
 function handleCanvasPointerMove(e) {
   if (traceGesture.pointerId !== e.pointerId) return;
   const { mx, my } = boardPoint(e);
@@ -1380,7 +1448,10 @@ function handleCanvasPointerMove(e) {
         ? null // sin objetivo claro todavía — no colorear de rojo/verde
         : checkMoveValidity(traceGesture.origin, hoverTarget).valid;
     }
-    draw();
+    // Un solo draw() por frame, no uno por cada pointermove — en algunos
+    // dispositivos ese evento llega con más frecuencia de la que la
+    // pantalla puede pintar de verdad.
+    requestDraw();
   }
 }
 
@@ -1454,7 +1525,7 @@ function checkMoveValidity(fromIdx, toIdx) {
   const key = `${a}-${b}`;
 
   if (edges.has(key)) return { valid: false, reason: 'edge-exists', message: MOVE_REASON_TEXT['edge-exists'] };
-  if (dist(circles[a].x, circles[a].y, circles[b].x, circles[b].y) > MAX_DIST) {
+  if (distSq(circles[a].x, circles[a].y, circles[b].x, circles[b].y) > MAX_DIST_SQ + DIST_EPS) {
     return { valid: false, reason: 'too-far', message: MOVE_REASON_TEXT['too-far'] };
   }
   const blockedBy = lineIntersectsAny(a, b, true);
@@ -1571,7 +1642,7 @@ function connectionCount(idx) {
 }
 
 function areAdjacent(i, j) {
-  return dist(circles[i].x, circles[i].y, circles[j].x, circles[j].y) <= MAX_DIST;
+  return distSq(circles[i].x, circles[i].y, circles[j].x, circles[j].y) <= MAX_DIST_SQ + DIST_EPS;
 }
 
 // ── Geometría: intersección de segmentos ─────────────────────────────────────
@@ -1781,8 +1852,15 @@ function invalidateActiveCirclesCache() {
   selectedTargetsCache = null;
 }
 
+// Telemetría de lo que de verdad importaba en rendimiento — el arrastre
+// llama a esto (vía draw()) muchas veces por segundo, así que es donde se
+// nota si algo se pone lento con tableros grandes/muchas líneas trazadas.
+// Solo se activa con ?debug, no tiene coste en la partida normal.
+const PERF = { legalStateCalls: 0, legalStateTotalMs: 0, legalStateMaxMs: 0 };
+
 function computeActiveCircles() {
   if (activeCirclesCache !== null) return activeCirclesCache;
+  const t0 = DEBUG ? performance.now() : 0;
   const active = new Set();
   // Recorre solo candidatePairs (las parejas dentro de MAX_DIST que se
   // precalcularon al generar el tablero) en vez de las N² parejas
@@ -1797,7 +1875,29 @@ function computeActiveCircles() {
     }
   }
   activeCirclesCache = active;
+  if (DEBUG) {
+    const elapsed = performance.now() - t0;
+    PERF.legalStateCalls++;
+    PERF.legalStateTotalMs += elapsed;
+    PERF.legalStateMaxMs = Math.max(PERF.legalStateMaxMs, elapsed);
+  }
   return active;
+}
+
+// Con ?debug en la URL: window.circlesPerf() en la consola del navegador
+// para ver medias/máximos — útil sobre todo al final de partidas de
+// 80-100 círculos, que es donde más aristas y triángulos hay acumulados.
+if (DEBUG) {
+  window.circlesPerf = () => {
+    console.log('computeActiveCircles:', {
+      llamadas: PERF.legalStateCalls,
+      media: `${(PERF.legalStateTotalMs / (PERF.legalStateCalls || 1)).toFixed(2)}ms`,
+      máximo: `${PERF.legalStateMaxMs.toFixed(2)}ms`,
+      candidatePairs: candidatePairs.length,
+      edges: edges.size,
+      triangles: triangles.length
+    });
+  };
 }
 
 // ── UI ────────────────────────────────────────────────────────────────────────
@@ -2095,6 +2195,14 @@ function dist(x1,y1,x2,y2) {
   return Math.sqrt((x2-x1)**2 + (y2-y1)**2);
 }
 
+function distSq(x1,y1,x2,y2) {
+  return (x2-x1)**2 + (y2-y1)**2;
+}
+
+// Margen de tolerancia para comparaciones de coma flotante contra
+// MAX_DIST_SQ — evita que redondeos excluyan por error la pareja exacta
+// que definió el umbral.
+const DIST_EPS = 1e-6;
 
 // ── Colores para hasta 6 jugadores ──────────────────────────────────────────
 const PLAYER_COLORS = ["#f4844a", "#5b9cf6", "#6bcb77", "#f7c59f", "#d98cf0", "#ffd166"];
