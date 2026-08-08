@@ -618,6 +618,7 @@
     <div class="setup-section">
       <div class="setup-label">Número de jugadores</div>
       <div class="player-count-row" id="pcRow" role="radiogroup" aria-label="Número de jugadores">
+        <button type="button" class="pc-btn" data-n="1" role="radio" aria-checked="false" onclick="pcButtonClick(1)">1</button>
         <button type="button" class="pc-btn" data-n="2" role="radio" aria-checked="false" onclick="pcButtonClick(2)">2</button>
         <button type="button" class="pc-btn" data-n="3" role="radio" aria-checked="false" onclick="pcButtonClick(3)">3</button>
         <button type="button" class="pc-btn" data-n="4" role="radio" aria-checked="false" onclick="pcButtonClick(4)">4</button>
@@ -742,7 +743,7 @@
 // entre sí. sw.js sigue siendo aparte por necesidad (un service worker no
 // puede leer esta constante, vive en otro archivo) — al subir de versión,
 // solo hace falta tocar ESTA línea y la de sw.js, no una tercera copia más.
-const APP_VERSION = 'v2.25';
+const APP_VERSION = 'v2.26';
 // ?debug en la URL: números de índice en los círculos + tabla de métricas
 // del grafo de adyacencia en consola al generar el tablero.
 const DEBUG = new URLSearchParams(location.search).has('debug');
@@ -1020,6 +1021,10 @@ function startGame() {
     const name = raw || `Jugador ${i+1}`;
     players.push({name, initial: name[0].toUpperCase(), score: 0, colorIndex: i});
   }
+  // Modo "1 jugador": la máquina ocupa el segundo puesto automáticamente
+  if (numPlayers === 1) {
+    players.push({name: 'Máquina', initial: 'M', score: 0, colorIndex: 1, isAI: true});
+  }
   // Leer número de círculos del slider
   N_CIRCLES = parseInt(document.getElementById('circleSlider').value) || 35;
 
@@ -1074,6 +1079,8 @@ function startGame() {
   requestAnimationFrame(() => {
     document.getElementById('dice')?.focus();
   });
+
+  scheduleAITurnIfNeeded();
 }
 
 function confirmNewGame() {
@@ -1343,8 +1350,8 @@ function resetRollState() {
   }
 }
 
-function rollDice() {
-  if (isRolling || (diceRolled && linesLeft > 0)) return; // ya tiró y le quedan líneas
+function rollDice(isAICall) {
+  if ((isAITurn() && !isAICall) || isRolling || (diceRolled && linesLeft > 0)) return; // ya tiró y le quedan líneas, o no es tu turno
   isRolling = true;
   const dice = document.getElementById('dice');
   dice.classList.add('rolling');
@@ -1407,7 +1414,7 @@ function hitTestCircle(mx, my) {
 }
 
 function handleCanvasPointerDown(e) {
-  if (!diceRolled || linesLeft <= 0) return;
+  if (isAITurn() || !diceRolled || linesLeft <= 0) return;
   const { mx, my } = boardPoint(e);
   const hit = hitTestCircle(mx, my);
 
@@ -1931,6 +1938,74 @@ function advanceTurn() {
   updateActiveCards();
   updateTurnInfo();
   draw();
+  scheduleAITurnIfNeeded();
+}
+
+// ── Modo 1 jugador: la máquina ────────────────────────────────────────────
+// Sin selector de dificultad, pero tampoco al azar puro: prioriza cerrar
+// un triángulo si puede, y si no, evita jugadas que le regalarían al rival
+// un triángulo servido en su siguiente turno. Solo si NINGUNA jugada es
+// segura, cede y elige cualquiera — como cualquier persona jugando, a
+// veces no hay más remedio. Reutiliza attemptConnect()/rollDice() tal
+// cual, sin lógica de turno duplicada.
+function isAITurn() {
+  return !!players[currentPlayer]?.isAI;
+}
+
+function scheduleAITurnIfNeeded() {
+  if (!isAITurn()) return;
+  setTimeout(() => {
+    if (!isAITurn()) return; // por si algo cambió mientras tanto
+    rollDice(true);
+    setTimeout(runAIMoves, 550); // algo más que los 420ms de la animación del dado
+  }, 650); // pequeña pausa — que se note que "piensa", no que es instantáneo
+}
+
+function runAIMoves() {
+  if (!isAITurn() || linesLeft <= 0) return; // el turno ya se resolvió solo (bloqueo/fin de partida)
+  const move = chooseAIMove();
+  if (!move) return;
+  attemptConnect(move[0], move[1]);
+  setTimeout(() => {
+    if (isAITurn() && linesLeft > 0) runAIMoves();
+  }, 550);
+}
+
+function chooseAIMove() {
+  const scoringMoves = [];
+  const safeMoves = [];
+  const anyMoves = [];
+
+  for (const { i, j } of candidatePairs) {
+    if (!checkMoveValidity(i, j).valid) continue;
+    anyMoves.push([i, j]);
+    if (findNewTriangles(i, j).length > 0) {
+      scoringMoves.push([i, j]);
+    } else if (!wouldGiftOpponentTriangle(i, j)) {
+      safeMoves.push([i, j]);
+    }
+  }
+
+  const pool = scoringMoves.length ? scoringMoves : (safeMoves.length ? safeMoves : anyMoves);
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Simula trazar i-j (sin tocar el estado real más que un instante) y
+// comprueba si eso dejaría alguna jugada del rival que cierre triángulo
+// de inmediato — si es así, esta jugada "regala" y se descarta salvo que
+// no quede ninguna otra opción.
+function wouldGiftOpponentTriangle(i, j) {
+  const key = `${Math.min(i,j)}-${Math.max(i,j)}`;
+  edges.add(key);
+  let gift = false;
+  for (const { i: a, j: b } of candidatePairs) {
+    if (edges.has(`${Math.min(a,b)}-${Math.max(a,b)}`)) continue;
+    if (!checkMoveValidity(a, b).valid) continue;
+    if (findNewTriangles(a, b).length > 0) { gift = true; break; }
+  }
+  edges.delete(key);
+  return gift;
 }
 
 function showBlockedMessage(remaining) {
